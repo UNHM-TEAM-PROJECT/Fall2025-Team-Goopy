@@ -2,7 +2,7 @@ import gradio as gr
 import pdfplumber
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from huggingface_hub import InferenceClient
+from transformers import pipeline
 
 # declare global vars for chunking pdf
 pdf_chunks_embeddings = None
@@ -10,6 +10,13 @@ pdf_chunk_texts = []
 
 # embeddings model (local + small)
 embed_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+# load local Flan-T5 Base for queries
+qa_pipeline = pipeline(
+    "text2text-generation",
+    model="google/flan-t5-base", # requires ~1gb 
+    device=-1  # CPU currently better performance on GPU (0)
+)
 
 # pdf utilities
 def load_and_chunk_pdf(file_paths, chunk_size=500):
@@ -51,65 +58,35 @@ def get_top_chunks(question, top_k=3):
     top_indices = scores.argsort()[-top_k:][::-1]
     return [pdf_chunk_texts[i] for i in top_indices]
 
-def answer_question(message, history, hf_token: gr.OAuthToken | None = None):
-    """
-    message: str (latest user input)
-    history: list of dicts [{"role":"user","content":...}, {"role":"assistant","content":...}]
-    hf_token: optional Hugging Face login token
-    """
-
-    # Build context from PDFs
+# answer generation with Flan-T5 Base
+def answer_question(message, history=None):
     top_chunks = get_top_chunks(message)
     context = " ".join(top_chunks)
 
-    # System instructions
     system_msg = (
-        "You are a helpful assistant that answers ONLY using the provided PDF context. "
+        "Answer the question ONLY using the provided PDF context. "
         "If the answer cannot be found in the context, say you don't know."
     )
 
-    # Rebuild chat history into messages for the model
-    messages = [{"role": "system", "content": system_msg}]
-    if history:
-        messages.extend(history)
-    messages.append({"role": "user", "content": f"Context:\n{context}\n\nQuestion: {message}\nAnswer:"})
+    prompt = f"{system_msg}\n\nContext:\n{context}\n\nQuestion: {message}\nAnswer:"
 
     try:
-        client = InferenceClient(
-            model="openai/gpt-oss-20b",
-            token=(hf_token.token if (hf_token and getattr(hf_token, 'token', None)) else None),
-        )
-
-        resp = client.chat_completion(
-            messages=messages,
-            max_tokens=256,
-            temperature=0.3,
-            top_p=0.9,
-            stop=["\nQuestion:", "\nContext:"],
-            stream=False,
-        )
-
-        if resp.choices and resp.choices[0].message:
-            return resp.choices[0].message.content.strip()
-
-        return "No answer returned."
-
+        result = qa_pipeline(prompt, max_new_tokens=256)
+        return result[0]["generated_text"].strip()
     except Exception as e:
-        return f"ERROR calling Inference API: {e}"
+        return f"ERROR running local model: {e}"
 
 # UI elements
 with gr.Blocks() as demo:
     with gr.Sidebar():
         gr.Markdown("## PDF Chat")
-        gr.LoginButton()
         pdf_files = gr.Files(label="Upload PDF(s)", file_types=[".pdf"])
         pdf_status = gr.Textbox(label="PDF status", interactive=False)
 
     chatbot = gr.ChatInterface(
         fn=answer_question,
         type="messages",
-        title="Ask questions about your PDFs",
-        description="Upload PDFs in the sidebar first, then chat with them.",
+        title="UNH Graduate Catalog Chatbot",
     )
 
     pdf_files.upload(
