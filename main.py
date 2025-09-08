@@ -107,12 +107,53 @@ def answer_question(message, history=None):
         return f"ERROR running local model: {e}"
 
 # UI elements
-with gr.Blocks() as demo:
+
+unh_blue = "#003366"
+unh_white = "#FFFFFF"
+unh_accent = "#00AEEF"
+
+custom_css = f"""
+#header-box {{
+    background-color: {unh_blue};
+    color: {unh_white};
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+}}
+#header-box h1, #header-box p {{
+    color: {unh_white};
+}}"""
+
+with gr.Blocks(theme=gr.themes.Soft()) as demo:
+    # header
+    with gr.Row(elem_id="header"):
+        gr.HTML(
+            """
+            <div id="header-box">
+                <h1>UNH Graduate Catalog Chatbot</h1>
+                <p>Ask questions about programs, courses, and policies from the UNH Graduate Catalog</p>
+            </div>
+            """
+        )
+
+    # chatbot
     chatbot = gr.ChatInterface(
         fn=answer_question,
         type="messages",
-        title="UNH Graduate Catalog Chatbot",
+        title="",
+        description="",
     )
+
+    # footer
+    with gr.Row(elem_id="footer"):
+        gr.Markdown(
+            f"""
+            <div style="text-align:center; padding:10px; font-size:14px; color:#555;">
+                <hr style="margin:10px 0;">
+                <p>Built for the <strong>University of New Hampshire</strong> Graduate Catalog project</p>
+            </div>
+            """
+        )
 
 if __name__ == "__main__":
     # Load file(s) pre-launch
