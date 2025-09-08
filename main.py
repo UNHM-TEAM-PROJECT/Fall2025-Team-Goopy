@@ -48,7 +48,7 @@ def load_json_file(path):
                 label = link.get("label")
                 url = link.get("url")
                 if label and url:
-                    new_texts.append(f"Degree: {label}")
+                    new_texts.append(f"Courses: {label}")
                     new_sources.append({
                         "title": label,
                         "url": url})
