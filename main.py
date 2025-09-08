@@ -92,7 +92,8 @@ def answer_question(message, history=None):
 
     prompt = (
         "Answer the question ONLY using the provided context. "
-        "If the answer cannot be found, say you don't know.\n\n"
+        "If the answer cannot be found, say you don't know."
+        "If the context does not mention the degree, say you don't know.\n\n"
         f"Context:\n{context}\n\nQuestion: {message}\nAnswer:"
     )
 
