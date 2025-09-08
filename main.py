@@ -35,12 +35,23 @@ def load_json_file(path):
             title = sec.get("title", "")
             full_title = f"{parent_title} > {title}" if parent_title else title
 
+            # Add plain text
             for t in sec.get("text", []):
                 new_texts.append(t)
                 new_sources.append({
                     "title": full_title,
                     "url": data.get("url", "")
                 })
+
+            # Add links (label + URL)
+            for link in sec.get("links", []):
+                label = link.get("label")
+                url = link.get("url")
+                if label and url:
+                    new_texts.append(f"Degree: {label}")
+                    new_sources.append({
+                        "title": label,
+                        "url": url})
 
             if "subsections" in sec:
                 recurse_sections(sec["subsections"], parent_title=full_title)
@@ -55,7 +66,7 @@ def load_json_file(path):
             chunk_sources.extend(new_sources)
         else:
             new_embeds = embed_model.encode(new_texts, convert_to_numpy=True)
-            chunks_embeddings = np.vstack([json_chunks_embeddings, new_embeds])
+            chunks_embeddings = np.vstack([chunks_embeddings, new_embeds])
             chunk_texts.extend(new_texts)
             chunk_sources.extend(new_sources)
 
@@ -157,5 +168,6 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
 
 if __name__ == "__main__":
     # Load file(s) pre-launch
+    load_json_file("course_descriptions.json")
     load_json_file("degree_requirements.json")
     demo.launch()
