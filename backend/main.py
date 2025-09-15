@@ -1,9 +1,17 @@
-import gradio as gr
+from fastapi import FastAPI
+import uvicorn
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from transformers import pipeline
 import json
 from functools import lru_cache
+
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+# FastAPI backend app
+app = FastAPI()
 
 # for chunking text
 chunks_embeddings = None
@@ -75,7 +83,6 @@ def load_json_file(path):
     else:
         print(f"WARNING: no text found in {path}")
 
-
 # retrieval utilities
 def get_top_chunks(question, top_k=3):
     if chunks_embeddings is None or len(chunks_embeddings) == 0:
@@ -86,7 +93,6 @@ def get_top_chunks(question, top_k=3):
     )
     top_indices = scores.argsort()[-top_k:][::-1]
     return [(chunk_texts[i], chunk_sources[i]) for i in top_indices]
-
 
 # core answer function (not cached directly)
 def _answer_question(question):
@@ -121,56 +127,31 @@ def _answer_question(question):
     except Exception as e:
         return f"ERROR running local model: {e}"
 
-
-# cached wrapper to handle Gradio inputs safely
+# cached wrapper for answers
 @lru_cache(maxsize=128)
 def cached_answer_str(question_str):
     return _answer_question(question_str)
 
+# FastAPI request model
+class ChatRequest(BaseModel):
+    message: str | list[str]
+    history: list[str] | None = None
 
-def answer_question(message, history=None):
-    # message might be a list from Gradio, convert to string
+# FastAPI response model
+class ChatResponse(BaseModel):
+    answer: str
+
+# FastAPI chat endpoint
+@app.post("/chat", response_model=ChatResponse)
+async def answer_question(request: ChatRequest):
+    message = request.message
     if isinstance(message, list):
         message = " ".join(message)
-    return cached_answer_str(message)
-
-
-# UI elements
-unh_blue = "#003366"
-unh_white = "#FFFFFF"
-
-with gr.Blocks(theme=gr.themes.Soft()) as demo:
-    # header
-    with gr.Row(elem_id="header"):
-        gr.HTML(
-            """
-            <div style="background-color: #003366; color: white; padding:20px; border-radius:8px; text-align:center;">
-                <h1>UNH Graduate Catalog Chatbot</h1>
-                <p>Ask questions about programs, courses, and policies from the UNH Graduate Catalog</p>
-            </div>
-            """
-        )
-
-    # chatbot
-    chatbot = gr.ChatInterface(
-        fn=answer_question,
-        type="messages",
-        title="",
-        description="",
-    )
-
-    # footer
-    with gr.Row(elem_id="footer"):
-        gr.Markdown(
-            """
-            <div style="text-align:center; padding:10px; font-size:14px; color:#555;">
-                <hr style="margin:10px 0;">
-                <p>Built for the <strong>University of New Hampshire</strong> Graduate Catalog project</p>
-            </div>
-            """
-        )
+    answer = cached_answer_str(message)
+    return ChatResponse(answer=answer)
 
 if __name__ == "__main__":
+    # Load data files and run server
     load_json_file("course_descriptions.json")
     load_json_file("degree_requirements.json")
-    demo.launch()
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
