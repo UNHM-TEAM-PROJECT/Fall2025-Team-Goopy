@@ -1,6 +1,7 @@
 # academic_standards_scrape.py
 # Scrapes the UNH "Academic Standards" page into ordered JSON.
 
+
 from bs4 import BeautifulSoup
 import requests
 import json
