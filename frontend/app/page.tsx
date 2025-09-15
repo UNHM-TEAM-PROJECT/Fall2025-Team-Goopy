@@ -2,7 +2,6 @@
 
 
 import React, { useState, useRef, useEffect } from "react";
-import ArrowIcon from "./ArrowIcon";
 
 export default function Home() {
   // Placeholder for chat messages
@@ -33,77 +32,70 @@ export default function Home() {
 
   return (
     <main className="h-screen flex flex-col bg-[var(--unh-white)] overflow-hidden">
-      <header className="bg-[var(--unh-blue)] px-8 py-4 rounded-b-lg text-center shadow-md" style={{ color: '#fff' }}>
-  <img src="/unh.svg" alt="UNH Logo" className="mx-auto my-6" style={{ maxWidth: '500px', height: 'auto', width: 'auto', marginTop: '24px', marginBottom: '24px' }} />
+      <header className="bg-[var(--unh-blue)] px-8 py-4 text-center shadow-md" style={{ color: '#fff' }}>
+  <div className="flex items-center">
+    <img src="/unh.svg" alt="UNH Logo" className="my-6 mr-4" style={{ maxWidth: '500px', height: 'auto', width: 'auto', marginTop: '24px', marginBottom: '24px' }} />
+    <span className="text-3xl font-bold">Catalog Chatbot</span>
+  </div>
       </header>
       <div className="flex-1 flex flex-col items-center overflow-hidden">
         <div className="w-2/3 flex flex-col h-full">
-          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-2" style={{wordBreak: 'break-word'}}>
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={
-                  msg.role === "user"
-                    ? `flex justify-end mb-2${i === messages.length - 1 ? ' mb-6' : ''}`
-                    : `flex justify-start mb-2${i === messages.length - 1 ? ' mb-6' : ''}`
-                }
-              >
-                <span
-                  className={
-                    msg.role === "user"
-                      ? "bg-[var(--unh-blue)] text-white px-8 py-4 rounded-full max-w-lg min-w-0 break-words shadow-md relative"
-                      : "bg-gray-100 text-gray-900 px-8 py-4 rounded-full max-w-lg min-w-0 break-words shadow-md relative border border-gray-300"
-                  }
-                  style={{ position: 'relative', display: 'inline-block', wordBreak: 'break-word' }}
-                >
-                  {msg.content}
-                  {msg.role === "user" ? (
-                    <span
-                      style={{
-                        position: 'absolute',
-                        right: -10,
-                        bottom: 8,
-                        width: 0,
-                        height: 0,
-                        borderTop: '8px solid transparent',
-                        borderBottom: '8px solid transparent',
-                        borderLeft: '8px solid #003366',
-                        content: '""',
-                      }}
-                    />
-                  ) : (
-                    <span
-                      style={{
-                        position: 'absolute',
-                        left: -10,
-                        bottom: 8,
-                        width: 0,
-                        height: 0,
-                        borderTop: '8px solid transparent',
-                        borderBottom: '8px solid transparent',
-                        borderRight: '8px solid #d1d5db',
-                        content: '""',
-                      }}
-                    />
-                  )}
-                </span>
-              </div>
-            ))}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-2 scrollbar-hide" style={{wordBreak: 'break-word'}}>
+            {messages.map((msg, i) => {
+              // Add extra margin if previous message is a different role
+              const isRoleChange = i > 0 && messages[i - 1].role !== msg.role;
+        if (msg.role === "user") {
+                return (
+                  <div
+                    key={i}
+                    className={`flex justify-end mb-2${i === messages.length - 1 ? ' mb-6' : ''}`}
+                    style={isRoleChange ? { marginTop: '1rem' } : {}}
+                  >
+          <div className="bg-[var(--unh-blue)] text-[var(--unh-white)] rounded-2xl break-words whitespace-pre-line m-1 px-6 py-4 text-lg md:text-xl max-w-[800px] w-fit block box-border">
+                      {msg.content}
+          </div>
+                  </div>
+                );
+              } else {
+                return (
+                  <div
+                    key={i}
+                    className={`flex justify-start mb-2${i === messages.length - 1 ? ' mb-6' : ''}`}
+                    style={isRoleChange ? { marginTop: '1rem' } : {}}
+                  >
+          <div className="bg-[var(--unh-light-gray)] text-black rounded-2xl break-words whitespace-pre-line m-1 px-6 py-4 text-lg md:text-xl max-w-[800px] w-fit block box-border">
+                      {msg.content}
+          </div>
+                  </div>
+                );
+              }
+            })}
             <div ref={chatEndRef} />
           </div>
-          <form onSubmit={sendMessage} className="flex gap-2 bg-white py-2 px-4 border-t border-gray-200">
-            <div className="flex-1">
-              <input
-                className="w-full border border-gray-300 rounded-full px-8 py-4 focus:outline-none focus:ring-2 focus:ring-[var(--unh-blue)]"
-                type="text"
-                placeholder="Ask questions about programs, courses, and policies"
-                value={input}
-                onChange={e => setInput(e.target.value)}
-              />
+          <form onSubmit={sendMessage} className="flex gap-2 bg-white py-2 px-4">
+            <div className="flex-1 flex items-center">
+              <div className="relative w-full flex items-center">
+                <input
+                  className="w-full rounded-full border-2 border-gray-400 text-black pr-14 px-8 py-6 text-lg md:text-xl placeholder:text-gray-400 bg-transparent box-border focus:outline-none"
+                  type="text"
+                  placeholder="Ask questions about programs, courses, and policies"
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                />
+                <button
+                  type="submit"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-[var(--unh-blue)] p-3 flex items-center justify-center shadow hover:bg-[var(--unh-accent-blue)] transition-colors"
+                  aria-label="Send"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="white" className="w-6 h-6">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M12 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </form>
           <div className="w-full px-4 pb-2 text-center text-sm text-gray-500">
-            <p>Not answering your question? Contact us at grad.school@unh.edu.</p>
+            <p className="text-lg">Not answering your question? Contact us at grad.school@unh.edu.</p>
           </div>
         </div>
       </div>
