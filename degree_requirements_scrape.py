@@ -1,3 +1,6 @@
+# degree_requirements_scrape.py
+# Scrapes the UNH "Degree Requirements" page into ordered JSON.
+
 from bs4 import BeautifulSoup
 import requests
 import json
