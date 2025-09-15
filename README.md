@@ -45,8 +45,7 @@ The chatbot follows a simple retrieval-augmented generation (RAG) architecture:
  
 ## Setup & Usage
  
-Clone the repository, install dependencies, and run the project. You will then have to run the backend and frontend. Connect to the local IP
-address output by the frontend, http://192.168.0.20:3000/, to view the chatbot in your browser.
+Clone the repository, install dependencies, and run the project. You will then have to run the backend and frontend. Connect to the local IP address output by the frontend, http://192.168.0.20:3000/, to view the chatbot in your browser.
 
 **Install Repo**
 ```bash
@@ -54,6 +53,7 @@ git clone https://github.com/UNHM-TEAM-PROJECT/Fall2025-Team-Goopy.git
 cd Fall2025-Team-Goopy
 pip install -r requirements.txt
 ```
+
 **Run Backend**
 ```bash
 python3 backend/main.py
@@ -62,4 +62,5 @@ python3 backend/main.py
 **Run Frontend**
 ```bash
 cd frontend
+npm install
 npm run dev
