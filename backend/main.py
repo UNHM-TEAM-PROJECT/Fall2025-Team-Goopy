@@ -143,8 +143,8 @@ def cached_answer_tuple(question_str):
 
 # FastAPI request model
 class ChatRequest(BaseModel):
-    message: str | list[str]
-    history: list[str] | None = None
+    message: str
+    history: list[str] = None
 
 # FastAPI response model
 class ChatResponse(BaseModel):
