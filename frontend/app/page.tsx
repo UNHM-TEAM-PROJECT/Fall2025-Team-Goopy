@@ -3,7 +3,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 // API endpoint for chat
-const CHAT_API_URL = "http://localhost:8000/chat";
+const CHAT_API_URL = "/chat";
 
 export type ChatSource = { title: string; url?: string };
 export type ChatMessage = {

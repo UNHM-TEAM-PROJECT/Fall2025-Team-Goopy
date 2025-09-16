@@ -7,12 +7,16 @@ import json
 from functools import lru_cache
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from fastapi.staticfiles import StaticFiles
+import os
 
 # FastAPI backend app
 app = FastAPI()
+
+
 # Allow CORS for frontend
 app.add_middleware(
     CORSMiddleware,
@@ -147,6 +151,7 @@ class ChatResponse(BaseModel):
     answer: str
     sources: list[dict] = []
 
+
 # FastAPI chat endpoint
 @app.post("/chat", response_model=ChatResponse)
 async def answer_question(request: ChatRequest):
@@ -156,10 +161,15 @@ async def answer_question(request: ChatRequest):
     answer, sources = cached_answer_tuple(message)
     return ChatResponse(answer=answer, sources=sources)
 
+# Mount static files at root after all API routes
+frontend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../frontend/out'))
+if os.path.isdir(frontend_path):
+    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
+
 # Load data files
 load_json_file("../scrape/course_descriptions.json")
 load_json_file("../scrape/degree_requirements.json")
 
-# Run server
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # Run server
+    uvicorn.run("main:app", host="0.0.0.0", port=8003, reload=True)
