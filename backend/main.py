@@ -165,6 +165,7 @@ async def answer_question(request: ChatRequest):
 frontend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../frontend/out'))
 if os.path.isdir(frontend_path):
     app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
+    print("Mounted frontend from:", frontend_path)
 
 # Load data files
 load_json_file("../scrape/course_descriptions.json")
