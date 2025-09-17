@@ -77,8 +77,8 @@ export default function Home() {
       <main className="h-screen flex flex-col bg-[var(--unh-white)] overflow-hidden">
         <header className="bg-[var(--unh-blue)] px-8 py-4 text-center shadow-md" style={{ color: '#fff' }}>
           <div className="flex items-center">
-            <img src="/unh.svg" alt="UNH Logo" className="my-6 mr-4" style={{ maxWidth: '500px', height: 'auto', width: 'auto', marginTop: '24px', marginBottom: '24px' }} />
-            <span className="text-3xl font-bold">Catalog Chatbot</span>
+            <img src="/unh.svg" alt="UNH Logo" className="my-6 mr-4" style={{ maxWidth: '125px', height: 'auto', width: 'auto', marginTop: '24px', marginBottom: '24px' }} />
+            <span className="text-3xl font-bold" style={{ fontFamily: 'Glypha, Arial, sans-serif' }}>Graduate Catalog Chatbot</span>
           </div>
         </header>
         {/* Suggested questions section, hidden after user asks a question */}
