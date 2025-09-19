@@ -70,6 +70,13 @@ cd ../backend
 python3 main.py
 ```
 
+**Run Containerized (Optional)**
+```bash
+docker system prune -a --volumes
+docker build -t goopy-app .
+docker run -p 8003:8003 --name goopy-app -e PUBLIC_URL=http://localhost:8003/t3 goopy-app
+```
+
 ### Deploy
 
 ```bash
