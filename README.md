@@ -46,9 +46,7 @@ The chatbot follows a simple retrieval-augmented generation (RAG) architecture:
  
 ## Setup & Usage
  
-Clone the repository and install dependencies You wil only need to run the backend, as the frontend is bundled with it. Connect to the local IP address output, http://localhost:8003/t3/, to view the chatbot in your browser.
-
-### Run Locally
+Clone the repository and install dependencies You wil only need to run the backend, as the frontend is bundled with it. Connect to the local IP address output, http://localhost:8003/, to view the chatbot in your browser.
 
 **Install Repo**
 ```bash
@@ -69,20 +67,12 @@ npm run build
 cd ../backend
 python3 main.py
 ```
-
-**Run Containerized (Optional)**
-```bash
-docker system prune -a --volumes
-docker build -t goopy-app .
-docker run -p 8003:8003 --name goopy-app -e PUBLIC_URL=http://localhost:8003/t3 goopy-app
-```
-
-### Deploy
-
+**Run Docker Container**
 ```bash
 git clone https://github.com/UNHM-TEAM-PROJECT/Fall2025-Team-Goopy.git
 cd Fall2025-Team-Goopy
 docker system prune -a --volumes
-docker build -t goopy-app .
-docker run -d -p 8003:8003 --name goopy-app goopy-app
+docker compose build
+docker build up -d
 ```
+

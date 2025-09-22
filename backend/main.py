@@ -7,6 +7,7 @@ import json
 from functools import lru_cache
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from fastapi.staticfiles import StaticFiles
@@ -16,11 +17,10 @@ import os
 app = FastAPI()
 
 # Allow CORS for frontend
-PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8003/t3/")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[PUBLIC_URL],
-    allow_credentials=False,
+    allow_origins=["*"],  # You can restrict this to your frontend URL
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -152,7 +152,7 @@ class ChatResponse(BaseModel):
 
 
 # FastAPI chat endpoint
-@app.post("/t3/chat", response_model=ChatResponse)
+@app.post("/chat", response_model=ChatResponse)
 async def answer_question(request: ChatRequest):
     message = request.message
     if isinstance(message, list):
@@ -164,11 +164,9 @@ async def answer_question(request: ChatRequest):
 frontend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../frontend/out'))
 if os.path.isdir(frontend_path):
     app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
-    print("Mounted frontend from:", frontend_path)
 
 # Load data files
-load_json_file("../scraper/course_descriptions.json")
-load_json_file("../scraper/degree_requirements.json")
+load_json_file("/app/scrape/degree_requirements.json")
 
 if __name__ == "__main__":
     # Run server
