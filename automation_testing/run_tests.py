@@ -4,7 +4,7 @@ from pathlib import Path
 
 ROOT   = Path(__file__).resolve().parents[1]
 PY     = sys.executable
-PRED   = ROOT / "automation_testing" / "predict_from_api.py"
+PRED   = ROOT / "automation_testing" / "predict.py"
 EVAL   = ROOT / "automation_testing" / "evaluator.py"
 GOLD   = ROOT / "automation_testing" / "gold.jsonl"
 REPORT = ROOT / "automation_testing" / "report.json"
