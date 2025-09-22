@@ -22,3 +22,21 @@ frontend/out/
 automation_testing/preds.jsonl
 automation_testing/report.json
 *.log
+# Python venvs
+.venv/
+venv/
+*/.venv/
+*/venv/
+backend/backend/.backend-venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Node/Next
+node_modules/
+frontend/.next/
+
+# Eval artifacts
+automation_testing/preds.jsonl
+automation_testing/report.json
