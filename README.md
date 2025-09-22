@@ -46,7 +46,7 @@ The chatbot follows a simple retrieval-augmented generation (RAG) architecture:
  
 ## Setup & Usage
  
-Clone the repository and install dependencies You wil only need to run the backend, as the frontend is bundled with it. Connect to the local IP address output, http://localhost:8003/t3/, to view the chatbot in your browser.
+Clone the repository and install dependencies You wil only need to run the backend, as the frontend is bundled with it. Connect to the local IP address output, http://localhost:8003/, to view the chatbot in your browser.
 
 ### Run Locally
 
@@ -70,11 +70,11 @@ cd ../backend
 python3 main.py
 ```
 
-**Run Containerized (Optional)**
+**Run Containerized**
 ```bash
 docker system prune -a --volumes
 docker build -t goopy-app .
-docker run -p 8003:8003 --name goopy-app -e PUBLIC_URL=http://localhost:8003/t3 goopy-app
+docker run -p 8003:8003 --name goopy-app -e PUBLIC_URL=http://localhost:8003/ goopy-app
 ```
 
 ### Deploy

@@ -2,7 +2,7 @@
 FROM python:3.10-slim
 
 # Set public url environment variable
-ENV PUBLIC_URL=https://whitemount.sr.unh.edu/t3/
+ENV PUBLIC_URL=https://whitemount-t3.sr.unh.edu/
 
 # Install Node.js, npm, and build tools for Python packages
 RUN apt-get update && \
@@ -14,7 +14,7 @@ WORKDIR /app
 
 # Copy backend and scrape folders
 COPY backend/ ./backend/
-COPY scrape/ ./scrape/
+COPY scraper/ ./scraper/
 
 # Copy frontend folder
 COPY frontend/ ./frontend/

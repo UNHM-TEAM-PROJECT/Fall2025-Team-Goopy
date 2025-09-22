@@ -16,7 +16,7 @@ import os
 app = FastAPI()
 
 # Allow CORS for frontend
-PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8003/t3/")
+PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8003/")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[PUBLIC_URL],
@@ -152,7 +152,7 @@ class ChatResponse(BaseModel):
 
 
 # FastAPI chat endpoint
-@app.post("/t3/chat", response_model=ChatResponse)
+@app.post("/chat", response_model=ChatResponse)
 async def answer_question(request: ChatRequest):
     message = request.message
     if isinstance(message, list):
