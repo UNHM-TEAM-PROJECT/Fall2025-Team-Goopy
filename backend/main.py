@@ -167,8 +167,8 @@ if os.path.isdir(frontend_path):
     print("Mounted frontend from:", frontend_path)
 
 # Load data files
-load_json_file("../scrape/course_descriptions.json")
-load_json_file("../scrape/degree_requirements.json")
+load_json_file("../scraper/course_descriptions.json")
+load_json_file("../scraper/degree_requirements.json")
 
 if __name__ == "__main__":
     # Run server
