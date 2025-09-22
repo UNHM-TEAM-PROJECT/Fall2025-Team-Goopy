@@ -6,3 +6,19 @@ __pycache__/
 
 # macOS
 .DS_Store
+# Local Python envs & caches
+.eval-venv/
+backend/.backend-venv/
+chatbot-env/
+__pycache__/
+*.pyc
+
+# Next.js / node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Local artifacts
+automation_testing/preds.jsonl
+automation_testing/report.json
+*.log
