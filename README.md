@@ -43,7 +43,11 @@ The chatbot follows a simple retrieval-augmented generation (RAG) architecture:
    - Sample question: *"What are the requirements for a Master's in Computer Science?"* returns a correct answer with citations and links.
 - The speed of responses can be analyzed with `automation_testing/test_times.py`, which outputs average repsonse times.
 - The most current generated report can viewed [here](https://github.com/UNHM-TEAM-PROJECT/Fall2025-Team-Goopy/blob/main/automation_testing/report.json).
- 
+
+### Test Dashboard
+
+A dashboard UI is available for quikcly running, interpreting, and comparing test results and chat logs. To view it, simply follow the below steps to run the progam and then visit the ```/dashboard``` page in your browser. For example, ```localhost:8003/dashboard```.
+
 ## Setup & Usage
  
 Clone the repository and install dependencies. You will only need to run the backend, as the frontend is bundled with it. Connect to the local IP address output, http://localhost:8003/, to view the chatbot in your browser.

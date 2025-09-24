@@ -39,26 +39,7 @@ app.add_middleware(
     allow_origins=[PUBLIC_URL],
     allow_credentials=False,
     allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-from fastapi.staticfiles import StaticFiles
-import os
-
-# FastAPI backend app
-app = FastAPI()
-
-# Allow CORS for frontend
-PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8003/")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[PUBLIC_URL],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
 # for chunking text
@@ -236,6 +217,166 @@ async def answer_question(request: ChatRequest):
     answer, sources = cached_answer_tuple(message)
     log_chat_to_csv(message, answer, sources)
     return ChatResponse(answer=answer, sources=sources)
+
+# Endpoint to serve test results for dashboard
+@app.get("/test-results")
+async def get_test_results():
+    """Serve the automation testing results from report.json with detailed predictions"""
+    try:
+        automation_dir = Path(__file__).parent.parent / "automation_testing"
+        report_path = automation_dir / "report.json"
+        preds_path = automation_dir / "preds.jsonl"
+        gold_path = automation_dir / "gold.jsonl"
+        
+        if not report_path.exists():
+            return {"error": "Test report not found", "message": "Run automation tests first"}
+        
+        # Load main report data
+        with open(report_path, 'r') as f:
+            data = json.load(f)
+        
+        # Add timestamp from file modification time
+        import os
+        stat_info = os.stat(report_path)
+        last_run = datetime.fromtimestamp(stat_info.st_mtime).isoformat()
+        data['lastRun'] = last_run
+        
+        # Add predictions data if available
+        predictions_data = None
+        if preds_path.exists() and gold_path.exists():
+            try:
+                # Load predictions
+                predictions = []
+                with open(preds_path, 'r') as f:
+                    for line in f:
+                        predictions.append(json.loads(line.strip()))
+                
+                # Load gold standard
+                gold_data = {}
+                with open(gold_path, 'r') as f:
+                    for line in f:
+                        item = json.loads(line.strip())
+                        gold_data[item['id']] = item
+                
+                # Combine predictions with gold standard and per-question metrics
+                combined_predictions = []
+                for pred in predictions:
+                    pred_id = pred['id']
+                    if pred_id in gold_data:
+                        gold_item = gold_data[pred_id]
+                        
+                        # Find matching per-question metrics from report
+                        per_question_metrics = next(
+                            (m for m in data.get("per_question", []) if m["id"] == pred_id), 
+                            {}
+                        )
+                        
+                        combined_predictions.append({
+                            'id': pred_id,
+                            'category': pred_id.split('-')[0],  # AS, DR, GR, GA
+                            'query': gold_item['query'],
+                            'model_answer': pred['model_answer'],
+                            'reference_answer': gold_item['reference_answer'],
+                            'nuggets': gold_item['nuggets'],
+                            'retrieved_ids': pred['retrieved_ids'],
+                            'gold_passages': gold_item['gold_passages'],
+                            'url': gold_item['url'],
+                            'metrics': {
+                                'nugget_precision': per_question_metrics.get('nugget_precision', 0),
+                                'nugget_recall': per_question_metrics.get('nugget_recall', 0),
+                                'nugget_f1': per_question_metrics.get('nugget_f1', 0),
+                                'sbert_cosine': per_question_metrics.get('sbert_cosine', 0),
+                                'bertscore_f1': per_question_metrics.get('bertscore_f1', 0),
+                                'recall@1': per_question_metrics.get('recall@1', 0),
+                                'recall@3': per_question_metrics.get('recall@3', 0),
+                                'recall@5': per_question_metrics.get('recall@5', 0),
+                                'ndcg@1': per_question_metrics.get('ndcg@1', 0),
+                                'ndcg@3': per_question_metrics.get('ndcg@3', 0),
+                                'ndcg@5': per_question_metrics.get('ndcg@5', 0)
+                            }
+                        })
+                
+                # Add predictions metadata
+                pred_stat_info = os.stat(preds_path)
+                predictions_data = {
+                    'predictions': combined_predictions,
+                    'total_questions': len(combined_predictions),
+                    'categories': {
+                        'AS': len([p for p in combined_predictions if p['category'] == 'AS']),
+                        'DR': len([p for p in combined_predictions if p['category'] == 'DR']),
+                        'GR': len([p for p in combined_predictions if p['category'] == 'GR']),
+                        'GA': len([p for p in combined_predictions if p['category'] == 'GA'])
+                    },
+                    'predictions_timestamp': datetime.fromtimestamp(pred_stat_info.st_mtime).isoformat(),
+                    'predictions_file': "preds.jsonl"
+                }
+            except Exception as pred_error:
+                print(f"Error loading predictions: {pred_error}")
+                # Continue without predictions if there's an error
+        
+        # Add predictions data to main response
+        if predictions_data:
+            data['predictions_data'] = predictions_data
+        
+        return data
+    except Exception as e:
+        return {"error": "Failed to load test results", "message": str(e)}
+
+# Endpoint to run new tests
+@app.post("/run-tests")
+async def run_tests():
+    """Run the automation testing suite and return status"""
+    try:
+        import subprocess
+        import sys
+        
+        # Path to the run_tests.py script
+        automation_dir = Path(__file__).parent.parent / "automation_testing"
+        run_tests_script = automation_dir / "run_tests.py"
+        
+        if not run_tests_script.exists():
+            return {"error": "Test runner not found", "message": "run_tests.py script is missing"}
+        
+        # Run the test script
+        result = subprocess.run(
+            [sys.executable, str(run_tests_script)],
+            cwd=str(automation_dir),
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout
+        )
+        
+        if result.returncode == 0:
+            return {
+                "status": "success",
+                "message": "Tests completed successfully",
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }
+        else:
+            return {
+                "status": "error", 
+                "message": "Tests failed",
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "return_code": result.returncode
+            }
+            
+    except subprocess.TimeoutExpired:
+        return {"error": "Test execution timeout", "message": "Tests took longer than 5 minutes to complete"}
+    except Exception as e:
+        return {"error": "Failed to run tests", "message": str(e)}
+
+# Serve dashboard HTML file for /dashboard route
+@app.get("/dashboard")
+async def serve_dashboard():
+    """Serve the dashboard HTML file"""
+    from fastapi.responses import FileResponse
+    dashboard_path = Path(__file__).parent.parent / "frontend" / "out" / "dashboard.html"
+    if dashboard_path.exists():
+        return FileResponse(dashboard_path, media_type="text/html")
+    else:
+        return {"error": "Dashboard not found", "message": "Build the frontend first"}
 
 # Mount static files at root after all API routes
 frontend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../frontend/out'))
