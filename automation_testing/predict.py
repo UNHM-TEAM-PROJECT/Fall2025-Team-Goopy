@@ -281,6 +281,7 @@ def read_jsonl(p: Path):
 def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--offline", action="store_true", help="Use only local cached models (no downloads)")
+    ap.add_argument("--output-dir", type=str, help="Directory to write output files")
     return ap.parse_args()
 
 
@@ -288,6 +289,14 @@ def main():
     global _OFFLINE
     args = parse_args()
     _OFFLINE = bool(args.offline)
+    
+    # Determine output path
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        preds_path = output_dir / "preds.jsonl"
+    else:
+        preds_path = PREDS
 
     if not GOLD.exists():
         raise SystemExit(f"Missing gold file: {GOLD}")
@@ -307,11 +316,11 @@ def main():
         })
         print(f"[OK] {qid}  ->  {pred['retrieved_ids'][:3]}")
 
-    PREDS.write_text(
+    preds_path.write_text(
         "\n".join(json.dumps(x, ensure_ascii=False) for x in outs),
         encoding="utf-8",
     )
-    print(f"Saved predictions to {PREDS}")
+    print(f"Saved predictions to {preds_path}")
 
 
 if __name__ == "__main__":
