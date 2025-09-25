@@ -45,12 +45,31 @@ const haveSameGoldSet = (report1: any, report2: any) => {
 };
 
 const getCategoryBadgeClasses = (category: string) => {
-  switch (category) {
-    case 'AS': return 'bg-blue-100 text-blue-800';
-    case 'DR': return 'bg-green-100 text-green-800';
-    case 'GR': return 'bg-purple-100 text-purple-800';
-    default: return 'bg-orange-100 text-orange-800';
-  }
+  // Generate consistent colors based on category string hash
+  const hashCode = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash);
+  };
+  
+  const colors = [
+    'bg-blue-100 text-blue-800',
+    'bg-green-100 text-green-800', 
+    'bg-purple-100 text-purple-800',
+    'bg-orange-100 text-orange-800',
+    'bg-red-100 text-red-800',
+    'bg-indigo-100 text-indigo-800',
+    'bg-yellow-100 text-yellow-800',
+    'bg-pink-100 text-pink-800',
+    'bg-gray-100 text-gray-800',
+    'bg-teal-100 text-teal-800'
+  ];
+  
+  return colors[hashCode(category) % colors.length];
 };
 
 interface MetricCardProps {
@@ -399,7 +418,7 @@ export default function TestResultsPage() {
     // Load test results data
     const loadData = async () => {
       try {
-        const response = await fetch('http://localhost:8003/test-results');
+        const response = await fetch('http://localhost:8003/reports');
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -463,7 +482,7 @@ export default function TestResultsPage() {
       // Refresh the data after a successful test run
       setTimeout(async () => {
         try {
-          const response = await fetch('http://localhost:8003/test-results');
+          const response = await fetch('http://localhost:8003/reports');
           if (response.ok) {
             const data = await response.json();
             setTestData(data);
@@ -478,6 +497,42 @@ export default function TestResultsPage() {
     } finally {
       setIsRunningTest(false);
     }
+  };
+
+  // Get all unique categories from the current data
+  const getAvailableCategories = (report: any) => {
+    if (!report?.predictions_data?.predictions) return [];
+    const categories = new Set<string>();
+    
+    report.predictions_data.predictions.forEach((p: any) => {
+      // Handle cases where category might be null, undefined, or empty
+      const category = p.category || 'Uncategorized';
+      categories.add(category);
+    });
+    
+    return Array.from(categories).sort();
+  };
+
+  // Get categories for comparison (intersection of both reports)
+  const getComparisonCategories = () => {
+    if (!selectedReports[0]?.predictions_data?.predictions || !selectedReports[1]?.predictions_data?.predictions) return [];
+    
+    const cats1 = new Set<string>();
+    const cats2 = new Set<string>();
+    
+    selectedReports[0].predictions_data.predictions.forEach((p: any) => {
+      const category = p.category || 'Uncategorized';
+      cats1.add(category);
+    });
+    
+    selectedReports[1].predictions_data.predictions.forEach((p: any) => {
+      const category = p.category || 'Uncategorized';
+      cats2.add(category);
+    });
+    
+    // Get intersection of categories (categories that exist in both reports)
+    const intersection = Array.from(cats1).filter(cat => cats2.has(cat));
+    return intersection.sort();
   };
 
   if (loading) {
@@ -755,10 +810,9 @@ export default function TestResultsPage() {
                                 className="border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-[var(--unh-blue)] focus:border-transparent"
                               >
                                 <option value="all">All Categories</option>
-                                <option value="AS">Academic Standards (AS)</option>
-                                <option value="DR">Degree Requirements (DR)</option>
-                                <option value="GR">Grading (GR)</option>
-                                <option value="GA">Graduation (GA)</option>
+                                {getComparisonCategories().map(category => (
+                                  <option key={category} value={category}>{category}</option>
+                                ))}
                               </select>
                             </div>
                             <div className="flex-1">
@@ -777,7 +831,8 @@ export default function TestResultsPage() {
                         {/* Predictions Comparison List */}
                         <div className="space-y-6">{selectedReports[0].predictions_data?.predictions 
                             ?.filter((pred: any) => {
-                              const matchesCategory = selectedCategory === 'all' || pred.category === selectedCategory;
+                              const predCategory = pred.category || 'Uncategorized';
+                              const matchesCategory = selectedCategory === 'all' || predCategory === selectedCategory;
                               const matchesSearch = searchTerm === '' || 
                                 pred.query.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                 pred.model_answer.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -789,11 +844,13 @@ export default function TestResultsPage() {
                               const pred2 = selectedReports[1].predictions_data?.predictions?.find((p: any) => p.id === pred1.id);
                               if (!pred2) return null;
                               
+                              const predCategory = pred1.category || 'Uncategorized';
+                              
                               return (
                                 <div key={pred1.id} className="border border-gray-200 rounded-lg p-6">
                                   <div className="flex justify-between items-start mb-4">
                                     <div className="flex items-center gap-3">
-                                      <span className={`px-2 py-1 rounded text-sm font-bold ${getCategoryBadgeClasses(pred1.category)}`}>
+                                      <span className={`px-2 py-1 rounded text-sm font-bold ${getCategoryBadgeClasses(predCategory)}`}>
                                         {pred1.id}
                                       </span>
                                       <span className="text-sm text-gray-500">#{index + 1}</span>
@@ -990,10 +1047,9 @@ export default function TestResultsPage() {
                             className="border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-[var(--unh-blue)] focus:border-transparent"
                           >
                             <option value="all">All Categories</option>
-                            <option value="AS">Academic Standards (AS)</option>
-                            <option value="DR">Degree Requirements (DR)</option>
-                            <option value="GR">Grading (GR)</option>
-                            <option value="GA">Graduation (GA)</option>
+                            {getAvailableCategories(selectedReport).map(category => (
+                              <option key={category} value={category}>{category}</option>
+                            ))}
                           </select>
                         </div>
                         <div className="flex-1">
@@ -1013,91 +1069,96 @@ export default function TestResultsPage() {
                     <div className="space-y-6">
                       {selectedReport.predictions_data?.predictions 
                           ?.filter((pred: any) => {
-                            const matchesCategory = selectedCategory === 'all' || pred.category === selectedCategory;
+                            const predCategory = pred.category || 'Uncategorized';
+                            const matchesCategory = selectedCategory === 'all' || predCategory === selectedCategory;
                             const matchesSearch = searchTerm === '' || 
                               pred.query.toLowerCase().includes(searchTerm.toLowerCase()) ||
                               pred.model_answer.toLowerCase().includes(searchTerm.toLowerCase()) ||
                               pred.reference_answer.toLowerCase().includes(searchTerm.toLowerCase());
                             return matchesCategory && matchesSearch;
                           })
-                          .map((pred: any, index: number) => (
-                            <div key={pred.id} className="border border-gray-200 rounded-lg p-6">
-                              <div className="flex justify-between items-start mb-4">
-                                <div className="flex items-center gap-3">
-                                  <span className={`px-2 py-1 rounded text-sm font-bold ${getCategoryBadgeClasses(pred.category)}`}>
-                                    {pred.id}
-                                  </span>
-                                  <span className="text-sm text-gray-500">#{index + 1}</span>
-                                </div>
-                                <a 
-                                  href={pred.url} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  className="text-[var(--unh-blue)] hover:underline text-sm"
-                                >
-                                  View Source
-                                </a>
-                              </div>
-                              
-                              <div className="mb-4">
-                                <h3 className="font-semibold text-lg text-gray-800 mb-2">Question:</h3>
-                                <p className="text-gray-700">{pred.query}</p>
-                              </div>
-
-                              <div className="grid md:grid-cols-2 gap-6">
-                                <div>
-                                  <h4 className="font-semibold text-gray-800 mb-2">Model Answer:</h4>
-                                  <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
-                                    <p className="text-gray-800">{pred.model_answer}</p>
+                          .map((pred: any, index: number) => {
+                            const predCategory = pred.category || 'Uncategorized';
+                            
+                            return (
+                              <div key={pred.id} className="border border-gray-200 rounded-lg p-6">
+                                <div className="flex justify-between items-start mb-4">
+                                  <div className="flex items-center gap-3">
+                                    <span className={`px-2 py-1 rounded text-sm font-bold ${getCategoryBadgeClasses(predCategory)}`}>
+                                      {pred.id}
+                                    </span>
+                                    <span className="text-sm text-gray-500">#{index + 1}</span>
                                   </div>
+                                  <a 
+                                    href={pred.url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-[var(--unh-blue)] hover:underline text-sm"
+                                  >
+                                    View Source
+                                  </a>
                                 </div>
                                 
-                                <div>
-                                  <h4 className="font-semibold text-gray-800 mb-2">Reference Answer:</h4>
-                                  <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded">
-                                    <p className="text-gray-800">{pred.reference_answer}</p>
+                                <div className="mb-4">
+                                  <h3 className="font-semibold text-lg text-gray-800 mb-2">Question:</h3>
+                                  <p className="text-gray-700">{pred.query}</p>
+                                </div>
+
+                                <div className="grid md:grid-cols-2 gap-6">
+                                  <div>
+                                    <h4 className="font-semibold text-gray-800 mb-2">Model Answer:</h4>
+                                    <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
+                                      <p className="text-gray-800">{pred.model_answer}</p>
+                                    </div>
                                   </div>
-                                </div>
-                              </div>
-
-                              <div className="mt-4">
-                                <h4 className="font-semibold text-gray-800 mb-2">Retrieved Documents:</h4>
-                                <div className="flex flex-wrap gap-2">
-                                  {pred.retrieved_ids.map((docId: string, idx: number) => (
-                                    <span key={idx} className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-sm">
-                                      {docId}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-
-                              {pred.nuggets && pred.nuggets.length > 0 && (
-                                <div className="mt-4">
-                                  <h4 className="font-semibold text-gray-800 mb-2">Key Points:</h4>
-                                  <ul className="list-disc list-inside text-sm text-gray-700">
-                                    {pred.nuggets.map((nugget: string, idx: number) => (
-                                      <li key={idx}>{nugget}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-
-                              {/* Individual Question Metrics */}
-                              {pred.metrics && (
-                                <div className="mt-6">
-                                  <h4 className="font-semibold text-gray-800 mb-4">Individual Question Metrics</h4>
                                   
-                                  <MetricsSummary summary={pred.metrics} />
-
-                                  {/* Detailed Metrics with Circular Progress */}
-                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative z-10">
-                                    <NuggetMetrics metrics={pred.metrics} />
-                                    <RankingMetrics metrics={pred.metrics} />
+                                  <div>
+                                    <h4 className="font-semibold text-gray-800 mb-2">Reference Answer:</h4>
+                                    <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded">
+                                      <p className="text-gray-800">{pred.reference_answer}</p>
+                                    </div>
                                   </div>
                                 </div>
-                              )}
-                            </div>
-                          ))}
+
+                                <div className="mt-4">
+                                  <h4 className="font-semibold text-gray-800 mb-2">Retrieved Documents:</h4>
+                                  <div className="flex flex-wrap gap-2">
+                                    {pred.retrieved_ids.map((docId: string, idx: number) => (
+                                      <span key={idx} className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-sm">
+                                        {docId}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {pred.nuggets && pred.nuggets.length > 0 && (
+                                  <div className="mt-4">
+                                    <h4 className="font-semibold text-gray-800 mb-2">Key Points:</h4>
+                                    <ul className="list-disc list-inside text-sm text-gray-700">
+                                      {pred.nuggets.map((nugget: string, idx: number) => (
+                                        <li key={idx}>{nugget}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+
+                                {/* Individual Question Metrics */}
+                                {pred.metrics && (
+                                  <div className="mt-6">
+                                    <h4 className="font-semibold text-gray-800 mb-4">Individual Question Metrics</h4>
+                                    
+                                    <MetricsSummary summary={pred.metrics} />
+
+                                    {/* Detailed Metrics with Circular Progress */}
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative z-10">
+                                      <NuggetMetrics metrics={pred.metrics} />
+                                      <RankingMetrics metrics={pred.metrics} />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                       {!selectedReport.predictions_data?.predictions && (
                         <div className="text-center py-8 text-gray-500">
                           <p>No detailed predictions available for this test run.</p>

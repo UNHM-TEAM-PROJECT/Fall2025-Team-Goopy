@@ -15,9 +15,9 @@ from fastapi.responses import FileResponse
 # Create router for dashboard endpoints
 router = APIRouter()
 
-@router.get("/test-results")
+@router.get("/reports")
 async def get_test_results():
-    """Serve all automation testing results from timestamped report directories"""
+    """Serve all automation reports from timestamped report directories"""
     try:
         automation_dir = Path(__file__).parent.parent / "automation_testing"
         reports_dir = automation_dir / "reports"
