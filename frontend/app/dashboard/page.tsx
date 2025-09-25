@@ -17,6 +17,11 @@ const formatRunIdDate = (runId: string) => {
   return 'Invalid date format';
 };
 
+const getTestRunDisplayNumber = (testRuns: any[], targetRunId: string) => {
+  const index = testRuns.findIndex((tr: any) => tr.run_id === targetRunId);
+  return index !== -1 ? testRuns.length - index : 1;
+};
+
 const getCategoryBadgeClasses = (category: string) => {
   switch (category) {
     case 'AS': return 'bg-blue-100 text-blue-800';
@@ -513,7 +518,7 @@ export default function TestResultsPage() {
             {isCompareMode && selectedReports.length === 2 && (
               <button
                 onClick={handleCompare}
-                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium"
+                className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors font-medium"
               >
                 Compare Selected
               </button>
@@ -523,7 +528,7 @@ export default function TestResultsPage() {
               onClick={handleToggleCompareMode}
               className={`px-4 py-2 rounded-lg transition-colors font-medium ${
                 isCompareMode 
-                  ? 'bg-red-600 text-white hover:bg-red-700' 
+                  ? 'bg-red-500 text-white hover:bg-red-600' 
                   : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
               }`}
             >
@@ -636,7 +641,7 @@ export default function TestResultsPage() {
                             disabled={!isSelected && selectedReports.length >= 2}
                             className={`flex-1 px-4 py-2 rounded-lg transition-colors text-sm font-medium ${
                               isSelected
-                                ? 'bg-red-500 text-white hover:bg-red-600'
+                                ? 'bg-red-400 text-white hover:bg-red-500'
                                 : selectedReports.length >= 2
                                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                 : 'bg-[var(--unh-blue)] text-white hover:bg-[var(--unh-accent-blue)]'
@@ -680,9 +685,9 @@ export default function TestResultsPage() {
                         Test Run Comparison
                       </h2>
                       <div className="flex gap-4 text-blue-100 text-sm">
-                        <span>Test Run 1: {selectedReports[0].run_id} ({formatRunIdDate(selectedReports[0].run_id)})</span>
+                        <span>Test Run #{testData?.test_runs ? getTestRunDisplayNumber(testData.test_runs, selectedReports[0].run_id) : 1} ({formatRunIdDate(selectedReports[0].run_id)})</span>
                         <span>vs</span>
-                        <span>Test Run 2: {selectedReports[1].run_id} ({formatRunIdDate(selectedReports[1].run_id)})</span>
+                        <span>Test Run #{testData?.test_runs ? getTestRunDisplayNumber(testData.test_runs, selectedReports[1].run_id) : 2} ({formatRunIdDate(selectedReports[1].run_id)})</span>
                       </div>
                     </div>
                     <button 
