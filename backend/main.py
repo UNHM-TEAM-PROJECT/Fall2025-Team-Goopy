@@ -14,6 +14,9 @@ import uvicorn
 from fastapi.staticfiles import StaticFiles
 import os
 
+# Import dashboard router
+from dashboard import router as dashboard_router
+
 # --- CSV logging (added) ---
 import csv
 import threading
@@ -32,24 +35,8 @@ if not os.path.isfile(CHAT_LOG_PATH):
 # FastAPI backend app
 app = FastAPI()
 
-# Allow CORS for frontend
-PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8003/")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[PUBLIC_URL],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-from fastapi.staticfiles import StaticFiles
-import os
-
-# FastAPI backend app
-app = FastAPI()
+# Include dashboard router
+app.include_router(dashboard_router)
 
 # Allow CORS for frontend
 PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8003/")
@@ -58,7 +45,7 @@ app.add_middleware(
     allow_origins=[PUBLIC_URL],
     allow_credentials=False,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
 # for chunking text
