@@ -1,50 +1,64 @@
 #!/usr/bin/env python3
-import sys, subprocess, json
+import sys, json, os
 import shutil
 from pathlib import Path
 from datetime import datetime
 
 ROOT   = Path(__file__).resolve().parents[1]
 PY     = sys.executable
-PRED   = ROOT / "automation_testing" / "predict.py"
 EVAL   = ROOT / "automation_testing" / "evaluator.py"
 GOLD   = ROOT / "automation_testing" / "gold.jsonl"
 
-def run(cmd):
-    print("→", " ".join(str(c) for c in cmd))
-    subprocess.check_call(cmd)
+# Import the real pipeline from main
+sys.path.insert(0, str(ROOT / "backend"))
+from main import build_index_from_jsons, answer_with_sources
 
 def main():
     if not GOLD.exists():
         raise SystemExit(f"Missing gold file: {GOLD}")
-    if not PRED.exists():
-        raise SystemExit(f"Missing predictor: {PRED}")
     if not EVAL.exists():
         raise SystemExit(f"Missing evaluator: {EVAL}")
+
+    # Make sure the API server won't start when importing main.py
+    os.environ["RUN_API"] = "0"
 
     # Create timestamped report directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     reports_dir = ROOT / "automation_testing" / "reports"
     report_dir = reports_dir / f"{timestamp}"
     report_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Copy gold.jsonl to the test run directory
+
+    # Copy gold.jsonl into run folder
     gold_copy = report_dir / "gold.jsonl"
     shutil.copy2(GOLD, gold_copy)
     print(f"Copied {GOLD} to {gold_copy}")
-    
-    # Define report file path
+
+    # Build the index from the scraped catalog
+    catalog_path = ROOT / "scraper" / "unh_catalog.json"
+    if not catalog_path.exists():
+        raise SystemExit(f"Missing catalog JSON: {catalog_path}")
+    build_index_from_jsons([str(catalog_path)])
+
+    # Generate predictions using main pipeline
+    preds_path = report_dir / "preds.jsonl"
+    with open(GOLD, "r", encoding="utf-8") as fin, open(preds_path, "w", encoding="utf-8") as fout:
+        for line in fin:
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            qid = rec["id"]
+            q = rec["query"]
+            ans, _, retrieved_ids = answer_with_sources(q, top_k=5)
+            out = {"id": qid, "model_answer": ans, "retrieved_ids": retrieved_ids}
+            fout.write(json.dumps(out, ensure_ascii=False) + "\n")
+    print(f"Wrote predictions to {preds_path}")
+
+    # Run evaluator (reads GOLD and preds from the report dir)
+    # evaluator.py supports --output-dir
+    os.system(f'"{PY}" "{EVAL}" --output-dir "{report_dir}"')
+
+    # Optional: pretty print summary if created
     report_file = report_dir / "report.json"
-
-    try:
-        run([PY, str(PRED), "--offline", "--output-dir", str(report_dir)])
-    except subprocess.CalledProcessError:
-        run([PY, str(PRED), "--output-dir", str(report_dir)])
-
-  
-    run([PY, str(EVAL), "--output-dir", str(report_dir)])
-
-    
     if report_file.exists():
         try:
             data = json.loads(report_file.read_text())
