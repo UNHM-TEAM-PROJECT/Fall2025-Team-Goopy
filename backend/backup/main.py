@@ -158,48 +158,45 @@ def _wrap_sources_with_text_fragments(sources_with_passages, question: str):
             wrapped.append({**src, "url": url})
     return wrapped
 
+# core answer function (not cached directly)
 def _answer_question(question):
     top_chunks = get_top_chunks(question)
     context = " ".join([text for text, _ in top_chunks])
 
+    base_prompt = (
+        "Answer the question ONLY using the provided context. "
+        "Always respond in 2–3 complete sentences. "
+        "Be concise, natural, and informative. "
+        "If the answer cannot be found in the context, say you don't know.\n\n"
+        f"Context:\n{context}\n\nQuestion: {question}\nAnswer:"
+    )
+
     try:
-        # short answer yes/no/time/etc.
-        short_prompt = (
-            "Answer the question using ONLY the provided context. "
-            "Provide a short, factual answer first (like a number, date, or 'Yes/No'). "
-            "If the answer cannot be found in the context, say you don't know.\n\n"
-            f"Context:\n{context}\n\nQuestion: {question}\nAnswer:"
-        )
-        short_result = qa_pipeline(short_prompt, max_new_tokens=32)
-        short_answer = short_result[0]["generated_text"].strip()
+        # Generate initial answer
+        result = qa_pipeline(base_prompt, max_new_tokens=128)
+        answer = result[0]["generated_text"].strip()
 
-        # longer answer 2-3 sentence explanation
-        long_prompt = (
-            "Provide a brief, natural, and informative explanation in 2–3 complete sentences. "
-            "Use ONLY the provided context.\n\n"
-            f"Context:\n{context}\n\nQuestion: {question}\nAnswer:"
-        )
-        long_result = qa_pipeline(long_prompt, max_new_tokens=128)
-        long_answer = long_result[0]["generated_text"].strip()
-
-        # combine short and long answers
-        if short_answer and long_answer:
-            if long_answer.lower().startswith(short_answer):
-                answer = long_answer
-            else:
-                answer = f"{short_answer}. {long_answer}"
-        else:
-            answer = short_answer or long_answer
-
-        # trim to 3 sentences to avoid verbose answers
-        def shorten_to_sentences(text, max_sentences=3):
+        # Post-process to ensure 2–3 sentences
+        def shorten_to_sentences(text, min_sentences=2, max_sentences=3):
             sentences = re.split(r'(?<=[.!?]) +', text)
+            # Ensure at least min_sentences
+            if len(sentences) < min_sentences:
+                # Try re-generating with an expanded prompt
+                expansion_prompt = (
+                    f"{base_prompt}\n\nThe draft answer was: '{text}'. "
+                    "Please rewrite it naturally in 2–3 complete sentences using the context."
+                )
+                result = qa_pipeline(expansion_prompt, max_new_tokens=128)
+                text = result[0]["generated_text"].strip()
+                sentences = re.split(r'(?<=[.!?]) +', text)
+            # Trim to max_sentences
             return " ".join(sentences[:max_sentences]).strip()
 
-        answer = shorten_to_sentences(answer, max_sentences=3)
+        answer = shorten_to_sentences(answer)
 
-        # build citations
+        # Build citation links WITH text fragments, one per unique (title,url)
         enriched_sources = _wrap_sources_with_text_fragments(top_chunks, question)
+
         seen = set()
         citation_lines = []
         for src in enriched_sources:
