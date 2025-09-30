@@ -1,0 +1,33 @@
+policy_terms:
+  - grade
+  - grading
+  - policy
+  - policies
+  - regulation
+  - regulations
+  - requirement
+  - requirements
+  - academic standards
+  - degree requirements
+
+tier_boosts:
+  1: 1.35   # Academic Regulations & Degree Requirements
+  2: 1.10   # General Information
+  3: 1.00   # Course Descriptions
+  4: 1.00   # Programs of Study
+
+intent:
+  course_keywords: ["course descriptions", "show courses", "list courses"]
+  degree_keywords: ["ms","m.s.","phd","ph.d","mba","mfa","ma","msc","for my program","program requirements","curriculum","concentration"]
+  course_code_regex: "\\b[A-Z]{3,5}\\s?\\d{3}\\b"
+
+nudges:
+  policy_acadreg_url: 1.15
+
+guarantees:
+  ensure_tier1_on_policy: true
+
+tier4_gate:
+  use_embedding: true
+  min_title_sim: 0.42
+  min_alt_sim: 0.38
