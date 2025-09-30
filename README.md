@@ -9,6 +9,7 @@ A chatbot integrated into UNH’s graduate student academic catalog. It helps cu
 - Answers questions using a local **Flan-T5 Small** model
 - Provides citations for the retrieved information, linking to specific paragraphs from the source(s)
 - Automated testing using BERTScore for insightful reports on accurary
+- A test dashboard for viewing and comparing automated test results
  
 ## Requirements
  
@@ -39,11 +40,14 @@ The chatbot follows a simple retrieval-augmented generation (RAG) architecture:
 
 ## Testing
  
-- Automated tests are conducted using `automation_testing/run_tests.py`. The script creates answers with `predict.py`, compares those against a created gold set `gold.jsonl` with `evaluator.py`, and finally outputs a report using BERTScore.
-   - Sample question: *"What are the requirements for a Master's in Computer Science?"* returns a correct answer with citations and links.
-- The speed of responses can be analyzed with `automation_testing/test_times.py`, which outputs average repsonse times.
-- The most current generated report can viewed [here](https://github.com/UNHM-TEAM-PROJECT/Fall2025-Team-Goopy/blob/main/automation_testing/report.json).
- 
+Automated tests are conducted using `automation_testing/run_tests.py`. The script creates a timestamp directory in the `reports` folder. The gold set is copied to each of these folders so that the master gold set can be continuously, safely updated. The current gold set is present in the `automation_testing` directory.
+
+Answer predictions are generated with `predict.py`, they're compared against the gold set `gold.jsonl` with `evaluator.py`, and finally a BERTscore report is output. The speed of responses can be analyzed with `automation_testing/test_times.py`, which outputs average repsonse times.
+
+### Test Dashboard
+
+A dashboard UI is available for quikcly running, interpreting, and comparing test results and chat logs. To view/use it, simply follow the below steps to run the progam and then visit the ```/dashboard``` page in your browser. For example, ```localhost:8003/dashboard```.
+
 ## Setup & Usage
  
 Clone the repository and install dependencies. You will only need to run the backend, as the frontend is bundled with it. Connect to the local IP address output, http://localhost:8003/, to view the chatbot in your browser.
@@ -72,7 +76,7 @@ python3 main.py
 
 **Run Containerized (Optional)**
 ```bash
-docker system prune -a --volumes
+docker system prune -a --volumes # Free space before building (optional)
 docker build -t goopy-app .
 docker run -p 8003:8003 --name goopy-app -e PUBLIC_URL=http://localhost:8003/ goopy-app
 ```
@@ -85,4 +89,11 @@ cd Fall2025-Team-Goopy
 docker system prune -a --volumes
 docker build -t goopy-app .
 docker run -d -p 8003:8003 --name goopy-app goopy-app
+```
+
+### Debug UI
+```bash
+cd frontend
+npm run dev
+# Connect to localhost:3000 in your browser
 ```

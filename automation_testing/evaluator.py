@@ -14,6 +14,7 @@ Outputs:
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 from pathlib import Path
@@ -23,7 +24,7 @@ import numpy as np
 from bert_score import score as bertscore
 from sentence_transformers import SentenceTransformer, util
 
-# -------- Paths --------
+# -------- Fallback Paths -------
 GOLD = Path(__file__).with_name("gold.jsonl")
 PREDS = Path(__file__).with_name("preds.jsonl")
 REPORT = Path(__file__).with_name("report.json")
@@ -142,11 +143,28 @@ class Evaluator:
         return precision, recall, f1
 
 
+def parse_args():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--output-dir", type=str, help="Directory to read preds.jsonl from and write report.json to")
+    return ap.parse_args()
+
+
 # -------- Main --------
 def main() -> None:
+    args = parse_args()
+    
+    # Determine input/output paths
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+        preds_path = output_dir / "preds.jsonl"
+        report_path = output_dir / "report.json"
+    else:
+        preds_path = PREDS
+        report_path = REPORT
+    
     # Load gold and predictions keyed by id
     gold: Dict[str, Dict] = {r["id"]: r for r in read_jsonl(GOLD)}
-    preds: Dict[str, Dict] = {r["id"]: r for r in read_jsonl(PREDS)}
+    preds: Dict[str, Dict] = {r["id"]: r for r in read_jsonl(preds_path)}
 
     ev = Evaluator()
 
@@ -210,11 +228,11 @@ def main() -> None:
         "ndcg@5": mean(buckets["N@5"]),
     }
 
-    REPORT.write_text(
+    report_path.write_text(
         json.dumps({"per_question": per_question, "summary": summary}, indent=2),
         encoding="utf-8",
     )
-    print("Wrote", REPORT)
+    print("Wrote", report_path)
 
 
 if __name__ == "__main__":
