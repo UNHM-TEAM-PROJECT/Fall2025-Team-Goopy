@@ -11,7 +11,7 @@ GOLD   = ROOT / "automation_testing" / "gold.jsonl"
 
 
 sys.path.insert(0, str(ROOT / "backend"))
-from main import load_catalog, answer_with_sources 
+from main import load_catalog, _answer_question 
 
 def run(cmd):
     print("→", " ".join(str(c) for c in cmd))
@@ -50,7 +50,7 @@ def main():
             qid = rec["id"]
             q   = rec["query"]
 
-            ans, _sources, retrieved_ids = answer_with_sources(q, top_k=5)
+            ans, _sources, retrieved_ids = _answer_question(q, True, 5)
 
             fout.write(json.dumps({
                 "id": qid,
