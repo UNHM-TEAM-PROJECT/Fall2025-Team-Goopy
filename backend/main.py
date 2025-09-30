@@ -132,17 +132,6 @@ def load_catalog(path: str):
     else:
         print(f"WARNING: {p} not found, skipping.")
 
-# retrieval utilities
-def get_top_chunks(question, top_k=3):
-    if chunks_embeddings is None or len(chunks_embeddings) == 0:
-        return []
-    question_vec = embed_model.encode([question], convert_to_numpy=True)[0]
-    scores = np.dot(chunks_embeddings, question_vec) / (
-        np.linalg.norm(chunks_embeddings, axis=1) * np.linalg.norm(question_vec) + 1e-10
-    )
-    top_indices = scores.argsort()[-top_k:][::-1]
-    return [(chunk_texts[i], chunk_sources[i]) for i in top_indices]
-
 def _wrap_sources_with_text_fragments(sources_with_passages, question: str):
     wrapped = []
     for passage, src in sources_with_passages:
@@ -159,8 +148,14 @@ def _wrap_sources_with_text_fragments(sources_with_passages, question: str):
     return wrapped
 
 # --- Answer ---
-def _answer_question(question):
-    top_chunks = get_top_chunks(question)
+def _answer_question(question, return_retrieved_ids=False, top_k=3):
+    # Get top chunks and indices
+    qv = embed_model.encode([question], convert_to_numpy=True)[0]
+    scores = np.dot(chunks_embeddings, qv) / (
+        np.linalg.norm(chunks_embeddings, axis=1) * np.linalg.norm(qv) + 1e-10
+    )
+    top_indices = scores.argsort()[-top_k:][::-1]
+    top_chunks = [(chunk_texts[i], chunk_sources[i]) for i in top_indices]
     context = " ".join([text for text, _ in top_chunks])
 
     try:
@@ -213,10 +208,22 @@ def _answer_question(question):
                 line += f" ({src['url']})"
             citation_lines.append(line)
 
-        return answer, citation_lines
+        if return_retrieved_ids:
+            # Build retrieved_ids in '<docid>#<chunk_index>' format
+            retrieved_ids = []
+            for i in top_indices:
+                src = chunk_sources[i]
+                base = _base_doc_id(src.get("url", ""))
+                retrieved_ids.append(f"{base}#{i}")
+            return answer, citation_lines, retrieved_ids
+        else:
+            return answer, citation_lines
 
     except Exception as e:
-        return f"ERROR running local model: {e}", []
+        error_msg = f"ERROR running local model: {e}"
+        if return_retrieved_ids:
+            return error_msg, [], []
+        return error_msg, []
 
 # --- Cached wrapper ---
 @lru_cache(maxsize=128)
@@ -233,48 +240,6 @@ def _base_doc_id(url: str) -> str:
         name = Path(p.path).parts[-1]
     slug = (name or "catalog").replace(".html", "").replace(".htm", "") or "catalog"
     return slug
-
-def answer_with_sources(question: str, top_k: int = 3):
-    """
-    Test helper that returns (answer_text_only, sources_list, retrieved_ids).
-    NOTE: Answer text contains NO embedded sources (tests should write only the answer).
-    """
-    if chunks_embeddings is None or len(chunks_embeddings) == 0:
-        return "I don't know.", [], []
-
-    # recompute top indices (leave get_top_chunks unchanged)
-    qv = embed_model.encode([question], convert_to_numpy=True)[0]
-    scores = np.dot(chunks_embeddings, qv) / (
-        np.linalg.norm(chunks_embeddings, axis=1) * np.linalg.norm(qv) + 1e-10
-    )
-    idxs = scores.argsort()[-top_k:][::-1]
-    top_pairs = [(chunk_texts[i], chunk_sources[i]) for i in idxs]
-    context = " ".join([t for t, _ in top_pairs])
-
-    prompt = (
-        "Answer the question ONLY using the provided context. "
-        "If the answer cannot be found, say you don't know.\n\n"
-        f"Context:\n{context}\n\nQuestion: {question}\nAnswer:"
-    )
-    result = qa_pipeline(prompt, max_new_tokens=128)
-    answer = result[0]["generated_text"].strip()
-
-    # build retrieved_ids in '<docid>#<chunk_index>' format
-    retrieved_ids = []
-    for i in idxs:
-        src = chunk_sources[i]
-        base = _base_doc_id(src.get("url", ""))
-        retrieved_ids.append(f"{base}#{i}")
-
-    # separate sources list (test runner can ignore)
-    sources_list = []
-    for _, src in top_pairs:
-        line = f"- {src.get('title','Source')}"
-        if src.get("url"):
-            line += f" ({src['url']})"
-        sources_list.append(line)
-
-    return answer, sources_list, retrieved_ids
 
 # --- FastAPI models ---
 class ChatRequest(BaseModel):
