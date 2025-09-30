@@ -8,12 +8,14 @@ import json
 from functools import lru_cache
 from text_fragments import build_text_fragment_url, choose_snippet, is_synthetic_label
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from fastapi.staticfiles import StaticFiles
 import os
+
 import pickle
 import csv
 import threading
@@ -25,25 +27,9 @@ from dashboard import router as dashboard_router
 # --- CSV logging ---
 CHAT_LOG_PATH = "chat_logs.csv"
 _LOG_LOCK = threading.Lock()
-if not os.path.isfile(CHAT_LOG_PATH):
-    with open(CHAT_LOG_PATH, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["timestamp", "question", "answer", "sources_json"])
-# --- end CSV logging ---
 
 # FastAPI backend app
 app = FastAPI()
-app.include_router(dashboard_router)
-
-# Allow CORS for frontend
-PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8003/")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[PUBLIC_URL],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
 
 # Global variables
 chunks_embeddings = None
@@ -62,7 +48,7 @@ embed_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 qa_pipeline = pipeline(
     "text2text-generation",
     model="google/flan-t5-small",
-    device=-1,
+    device=-1
 )
 
 # cache helpers
@@ -139,7 +125,14 @@ def load_json_file(path):
     else:
         print(f"WARNING: no text found in {path}")
 
-# --- Retrieval ---
+def load_catalog(path: str):
+    p = Path(path)
+    if p.exists():
+        load_json_file(str(p))
+    else:
+        print(f"WARNING: {p} not found, skipping.")
+
+# retrieval utilities
 def get_top_chunks(question, top_k=3):
     if chunks_embeddings is None or len(chunks_embeddings) == 0:
         return []
@@ -230,6 +223,59 @@ def _answer_question(question):
 def cached_answer_tuple(question_str):
     return _answer_question(question_str)
 
+# small test helper: answer + retrieved_ids
+def _base_doc_id(url: str) -> str:
+    if not url:
+        return "catalog"
+    p = urlparse(url)
+    name = (Path(p.path).name or "").rstrip("/")
+    if not name and p.path:
+        name = Path(p.path).parts[-1]
+    slug = (name or "catalog").replace(".html", "").replace(".htm", "") or "catalog"
+    return slug
+
+def answer_with_sources(question: str, top_k: int = 3):
+    """
+    Test helper that returns (answer_text_only, sources_list, retrieved_ids).
+    NOTE: Answer text contains NO embedded sources (tests should write only the answer).
+    """
+    if chunks_embeddings is None or len(chunks_embeddings) == 0:
+        return "I don't know.", [], []
+
+    # recompute top indices (leave get_top_chunks unchanged)
+    qv = embed_model.encode([question], convert_to_numpy=True)[0]
+    scores = np.dot(chunks_embeddings, qv) / (
+        np.linalg.norm(chunks_embeddings, axis=1) * np.linalg.norm(qv) + 1e-10
+    )
+    idxs = scores.argsort()[-top_k:][::-1]
+    top_pairs = [(chunk_texts[i], chunk_sources[i]) for i in idxs]
+    context = " ".join([t for t, _ in top_pairs])
+
+    prompt = (
+        "Answer the question ONLY using the provided context. "
+        "If the answer cannot be found, say you don't know.\n\n"
+        f"Context:\n{context}\n\nQuestion: {question}\nAnswer:"
+    )
+    result = qa_pipeline(prompt, max_new_tokens=128)
+    answer = result[0]["generated_text"].strip()
+
+    # build retrieved_ids in '<docid>#<chunk_index>' format
+    retrieved_ids = []
+    for i in idxs:
+        src = chunk_sources[i]
+        base = _base_doc_id(src.get("url", ""))
+        retrieved_ids.append(f"{base}#{i}")
+
+    # separate sources list (test runner can ignore)
+    sources_list = []
+    for _, src in top_pairs:
+        line = f"- {src.get('title','Source')}"
+        if src.get("url"):
+            line += f" ({src['url']})"
+        sources_list.append(line)
+
+    return answer, sources_list, retrieved_ids
+
 # --- FastAPI models ---
 class ChatRequest(BaseModel):
     message: str
@@ -261,22 +307,29 @@ async def answer_question(request: ChatRequest):
     log_chat_to_csv(message, answer, sources)
     return ChatResponse(answer=answer, sources=sources)
 
-# --- Mount frontend ---
-frontend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../frontend/out'))
-if os.path.isdir(frontend_path):
-    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
-    print("Mounted frontend from:", frontend_path)
-
-# load cache or json
-if not load_chunks_cache():
-    filenames = ["unh_catalog.json"]
-    for name in filenames:
-        path = DATA_DIR / name
-        if path.exists():
-            load_json_file(str(path))
-        else:
-            print(f"WARNING: {path} not found, skipping.")
-    save_chunks_cache()  # save for next startup
-
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8003, reload=True)
+    # Load catalog
+    load_catalog(DATA_DIR / "unh_catalog.json")
+    # create file with header if not exists
+    if not os.path.isfile(CHAT_LOG_PATH):
+        with open(CHAT_LOG_PATH, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["timestamp", "question", "answer", "sources_json"])
+    # Include dashboard router
+    app.include_router(dashboard_router)
+    # Allow CORS for frontend
+    PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8003/")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[PUBLIC_URL],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"]
+    )
+    # Mount static files at root after all API routes
+    frontend_path = f"{BASE_DIR}/frontend/out"
+    if os.path.isdir(frontend_path):
+        app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
+        print("Mounted frontend from:", frontend_path)
+    # Run server
+    uvicorn.run(app, host="0.0.0.0", port=8003, reload=False)
