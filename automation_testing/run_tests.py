@@ -50,7 +50,7 @@ def main():
             qid = rec["id"]
             q   = rec["query"]
 
-            ans, _sources, retrieved_ids = _answer_question(q, True, 5)
+            ans, _sources, retrieved_ids = _answer_question(q, True)
 
             fout.write(json.dumps({
                 "id": qid,
