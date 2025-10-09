@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse, quote_plus
 
+from general_responses import GENERIC_RESPONSES, get_generic_response
+
 import numpy as np
 import yaml
 from fastapi import FastAPI, Header, HTTPException
@@ -1090,6 +1092,11 @@ async def answer_question(request: ChatRequest, x_session_id: Optional[str] = He
 
     sess = get_session(x_session_id)
     incoming_message = request.message if not isinstance(request.message, list) else " ".join(request.message)
+
+    # generic questions handling
+    resp = get_generic_response(incoming_message)
+    if resp:
+        return ChatResponse(answer=resp, sources=[], retrieval_path=[])
 
     #  update session context ---
     new_intent = _detect_intent(incoming_message, prev_intent=sess.get("intent"))
