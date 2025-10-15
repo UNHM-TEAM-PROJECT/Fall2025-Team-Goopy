@@ -4,7 +4,7 @@ from collections import Counter
 from pathlib import Path
 
 # container paths
-BASE_DIR = Path("/app")  
+BASE_DIR = Path(__file__).resolve().parent.parent
 INPUT_FILE = BASE_DIR / "chat_logs.csv"
 GOLD_FILE = BASE_DIR / "automation_testing/gold.jsonl"
 OUTPUT_FILE = BASE_DIR / "frontend/public/popular_questions.json"
