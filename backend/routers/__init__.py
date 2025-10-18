@@ -1,3 +1,3 @@
-from . import chat, debug
+from . import chat, dashboard
 
-__all__ = ["chat", "debug"]
+__all__ = ["chat", "dashboard"]

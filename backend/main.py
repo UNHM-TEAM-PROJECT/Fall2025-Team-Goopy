@@ -7,10 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from config.settings import load_retrieval_config
 from models.ml_models import initialize_models
-from routers import chat, debug
+from routers import chat, dashboard
 from services.chunk_service import load_initial_data
 from utils.logging_utils import ensure_chat_log_file
-from dashboard import router as dashboard_router
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -41,8 +40,7 @@ def create_app() -> FastAPI:
     
     # include routers (no prefix since routes already have paths)
     app.include_router(chat.router, tags=["chat"])
-    app.include_router(debug.router, tags=["debug"])
-    app.include_router(dashboard_router)
+    app.include_router(dashboard.router)
     
     # mount frontend static files
     frontend_path = BASE_DIR / "frontend" / "out"
