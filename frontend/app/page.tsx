@@ -54,10 +54,12 @@ function dedupeAndRank(raw: RawSource[]): (RawSource & { stem: string; domain: s
     return { ...r, ...n, score: scoreSource(r.title, n.stem) };
   });
 
-  // Keep the best by (stem,title) pair
+  // Keep the best per *full URL* (includes #anchor). If URL is missing, fall back to title
+  // so title-only items are not dropped.
   const best = new Map<string, (RawSource & { stem: string; domain: string; score: number })>();
   for (const e of enriched) {
-    const key = `${e.stem}::${e.title.trim().toLowerCase()}`;
+    const urlKey = (e.url ?? "").trim().toLowerCase(); // preserves #anchor if present
+    const key = urlKey || e.title.trim().toLowerCase();
     const prev = best.get(key);
     if (!prev || e.score > prev.score) best.set(key, e);
   }
