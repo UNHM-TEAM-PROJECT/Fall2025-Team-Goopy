@@ -1,16 +1,32 @@
+import csv
+import json
 import os
-from contextlib import asynccontextmanager
+import pickle
+import re
+import threading
+from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
-import uvicorn
-from fastapi import FastAPI
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse, quote_plus
+
+import numpy as np
+import yaml
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from config.settings import load_retrieval_config
-from models.ml_models import initialize_models
-from routers import chat, dashboard
-from services.chunk_service import load_initial_data
-from utils.logging_utils import ensure_chat_log_file
+from pydantic import BaseModel
+from sentence_transformers import SentenceTransformer
+from transformers import pipeline
+import uvicorn
 
+from dashboard import router as dashboard_router
+from hierarchy import compute_tier
+from text_fragments import build_text_fragment_url, choose_snippet, is_synthetic_label
+
+# -----------------------
+# Paths & Globals
+# -----------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "scraper"
 CACHE_PATH = DATA_DIR / "chunks_cache.pkl"
@@ -1073,7 +1089,7 @@ def _match_program_alias(message: str) -> Optional[Dict[str, str]]:
     q_raw = (message or "").strip()
     q_norm = _norm(q_raw)
 
-        # --- Preferred alias routing (Biotechnology M.S.) ---
+    # --- Preferred alias routing (Biotechnology M.S.) ---
     try:
         pref_map = (CFG.get("preferred_program_aliases") or {})
         biotech_pref = pref_map.get("biotechnology_ms", "")
@@ -1650,25 +1666,35 @@ def configure_app(app_instance: FastAPI) -> None:
     PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8003/")
     app_instance.add_middleware(
         CORSMiddleware,
-        allow_origins=[public_url],
+        allow_origins=[PUBLIC_URL],
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
-    # include routers (no prefix since routes already have paths)
-    app.include_router(chat.router, tags=["chat"])
-    app.include_router(dashboard.router)
-    
-    # mount frontend static files
+
     frontend_path = BASE_DIR / "frontend" / "out"
     if frontend_path.is_dir():
-        app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="frontend")
-        print(f"Mounted frontend from: {frontend_path}")
-    
-    return app
+        app_instance.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="frontend")
+        print("Mounted frontend from:", frontend_path)
 
-app = create_app()
+def ensure_chat_log_file() -> None:
+    if not os.path.isfile(CHAT_LOG_PATH):
+        with open(CHAT_LOG_PATH, "w", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerow(["timestamp", "question", "answer", "sources_json"])
+
+def load_initial_data() -> None:
+    loaded_from_cache = load_chunks_cache()
+    if not loaded_from_cache:
+        filenames = ["unh_catalog.json"]
+        for name in filenames:
+            load_catalog(DATA_DIR / name)
+        save_chunks_cache()
+    _build_program_index()  # program title/url index for aliasing
+
 
 if __name__ == "__main__":
+    load_retrieval_cfg()
+    ensure_chat_log_file()
+    load_initial_data()
+    configure_app(app)
     uvicorn.run(app, host="0.0.0.0", port=8003, reload=False)
