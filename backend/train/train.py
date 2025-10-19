@@ -19,8 +19,8 @@ sys.path.insert(0, str(ROOT))
 from config.settings import load_retrieval_config
 from models.ml_models import initialize_models
 from services.chunk_service import load_initial_data
-from services.qa_service import get_context
-from services.qa_service import get_prompt
+from services.qa_service import get_prompt, build_context_from_indices
+from services.retrieval_service import search_chunks
 
 def create_training_data():
     """Generate training data using existing retrieval pipeline"""
@@ -39,7 +39,10 @@ def create_training_data():
     for i, record in enumerate(data):
         try:
             question = record["query"]
-            _, _, context = get_context(question)
+
+            idxs, _ = search_chunks(question)
+            _, context = build_context_from_indices(idxs)
+
             training_examples.append({
                 "input": get_prompt(question, context),
                 "output": record["answer"],
