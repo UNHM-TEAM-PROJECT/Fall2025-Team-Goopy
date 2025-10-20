@@ -68,8 +68,22 @@ def build_program_index(chunk_sources: List[Dict], chunk_meta: List[Dict]) -> No
 def match_program_alias(message: str) -> Optional[Dict[str, str]]:
     global _PROGRAM_EMBEDDINGS
     q_raw = (message or "").strip()
+    # Filter candidates by degree intent
+    degree_intent = _degree_intent(q_raw)
+    if degree_intent["ms"] or degree_intent["phd"] or degree_intent["cert"]:
+        candidates = [rec for rec in _PROGRAM_PAGES if _degree_allowed(degree_intent, rec)]
+        result = _search_candidates(candidates, q_raw)
+        if result:
+            return result
+    # Try full pool if filtered pool fails
     candidates = list(_PROGRAM_PAGES)
-    # Embedding-based similarity matching
+    result = _search_candidates(list(_PROGRAM_PAGES), q_raw)
+    if result:
+        return result
+    return None
+
+def _search_candidates(candidates: List[Dict[str, str]], q_raw: str) -> Optional[Dict[str, str]]:
+    global _PROGRAM_EMBEDDINGS
     embed_model = get_embed_model()
     q_vec = embed_model.encode([q_raw], convert_to_numpy=True)[0]
     title_vecs = _PROGRAM_EMBEDDINGS[:len(candidates)]
@@ -77,12 +91,36 @@ def match_program_alias(message: str) -> Optional[Dict[str, str]]:
         np.linalg.norm(title_vecs, axis=1) * np.linalg.norm(q_vec) + 1e-8
     )
     best_idx = int(np.argmax(sims))
-    best = candidates[best_idx]
     best_score = float(sims[best_idx])
-    threshold = 0.60
-    if best_score >= threshold:
+    if best_score >= 0.6:
+        best = candidates[best_idx]
         return {"title": best["title"], "url": best["url"]}
     return None
+
+def _degree_flags(rec: Dict[str, str]) -> Tuple[bool, bool, bool]:
+    title = (rec.get("title") or "").lower()
+    url = (rec.get("url") or "").lower()
+    is_cert = "certificate" in title or "certificate" in url
+    is_phd = "phd" in title or "ph.d" in title or "/phd" in url
+    is_ms = "m.s" in title or " ms" in title or "/ms" in url or "-ms/" in url
+    return is_ms, is_phd, is_cert
+
+def _degree_allowed(intent: Dict[str, bool], rec: Dict[str, str]) -> bool:
+    is_ms, is_phd, is_cert = _degree_flags(rec)
+    if intent["ms"] and not is_ms:
+        return False
+    if intent["phd"] and not is_phd:
+        return False
+    if intent["cert"] and not is_cert:
+        return False
+    return True
+
+def _degree_intent(message: str) -> Dict[str, bool]:
+    t = f" {message.lower()} "
+    wants_ms = bool(re.search(r"\bms\b|\bm\.s\.?\b|master'?s", t))
+    wants_phd = bool(re.search(r"\bphd\b|ph\.d\.?\b|doctoral|doctorate", t))
+    wants_cert = "certificate" in t
+    return {"ms": wants_ms, "phd": wants_phd, "cert": wants_cert}
 
 def update_section_stopwords(new_stopwords: List[str]) -> None:
     """Update the section stopwords used for filtering program pages."""
@@ -109,5 +147,4 @@ def same_program_family(url1: str, url2: str) -> bool:
     
     k1 = get_key(url1)
     k2 = get_key(url2)
-    
     return k1 != () and k1 == k2

@@ -118,5 +118,50 @@
         "query": "Tell me about the Justice Studies program",
         "answer": "The goal of the master of arts degree program in justice studies is to produce graduates who have a high level of knowledge about law and justice in American society and worldwide. Upon completion, graduates will be able to enhance their careers in the justice system, enter new careers in the justice system, or continue their graduate training in law, social sciences, or humanities.\n\nThe program addresses issues of justice that are not necessarily criminal in nature. It will familiarize students with legal and justice ideas, legal institutions, and the legal process. It will provide tools for a reasoned appraisal of how the law works and of the policies that underlie it. The courses address a wide variety of subjects, including philosophy of law, American legal history, psychological aspects of the law, social control, criminology, juvenile delinquency, law and literature, and family law. Courses are taught by faculty with backgrounds in both the social sciences and humanities.",
         "url": "https://catalog.unh.edu/graduate/programs-study/justice-studies/#text"
+    },
+    {
+        "query": "Is the Health Care (HLTC) program offered online?",
+        "answer": "Yes, the Health Care (HLTC) program is offered online.",
+        "url": "https://catalog.unh.edu/graduate/programs-study/health-care-management/"
+    },
+    {
+        "query": "What are the admission requirements for the Kinesiology (KIN) progam?",
+        "answer": "Admission is based on undergraduate preparation, academic record, and letters of recommendation. Applicants must be above-average students and show adequate preparation in the basic support courses of the selected concentration area. Applicants who have not met specific course prerequisites should expect to take additional undergraduate work without receiving graduate credit.",
+        "url": "https://catalog.unh.edu/graduate/programs-study/kinesiology/#text"
+    },
+    {
+        "query": "What career tarjectories are there for the Natural Resources (NR) program?",
+        "answer": "Possible career trajectories are diverse. Some graduates pursue private sector environmental and social science consulting. Others seek positions in planning, environmental protection, research, or resource management with federal or state agencies (e.g., NOAA, USDA, EPA, NRCS), private industry, or with non-governmental organizations. Graduates from the environmental economics option may also find careers in agribusiness or banking. Graduates may choose to pursue advanced study at the doctoral level.",
+        "url": "https://catalog.unh.edu/graduate/programs-study/natural-resources/#text"
+    },
+    {
+        "query": "Do I need a B.S. in mathematics to enroll in the Integrated Applied Mathematics (IAM) program?",
+        "answer": "Graduate students are admitted to the IAM program with a variety of backgrounds. The expectation is that a student entering the program will have a B.S. or M.S. degree in a technical field such as a mathematics, science, or an engineering discipline. Students with a M.S. degree in a technical field are particularly well suited for admission to the IAM Program. Students have been supported through Teaching Assistantships, CEPS Fellowships, and Research Assistantships funded by federal grants.",
+        "url": "https://catalog.unh.edu/graduate/programs-study/natural-resources/#text"
+    },
+    {
+        "query": "What does the Accounting and Finance (ACFI) program provide students?",
+        "answer": "The Master of Science in Finance provides students with the analytical, programming, and problem-solving skills necessary to succeed in a complex financial environment. Upon graduation, these skills can be utilized in a variety of institutions, including investment banks, commercial banks, corporations, and asset management firms. Applicants must have an undergraduate degree but can come from any background. The program can be completed full-time in 10 months.",
+        "url": "https://catalog.unh.edu/graduate/programs-study/accounting-finance/"
+    },
+    {
+        "query": "What are the admission requirements for the College Teaching (GRAD) program?",
+        "answer": "Applicants to the cognate program must have the support and recommendation of their doctoral program coordinator.",
+        "url": "https://catalog.unh.edu/graduate/programs-study/college-teaching/"
+    },
+    {
+        "query": "What are the admission requirements for the Computing (COMP) program?",
+        "answer": "Applicants must meet the admission standards of the UNH Graduate School and have a bachelor’s degree in a computing or computing-related discipline: computer science, information technology, computer information systems, data science, information sciences, computer engineering, or software engineering.\n\nStudents with undergraduate degrees in other fields are also welcome to apply. They are required to demonstrate computing competencies in programming, computing systems and tools, and college-level mathematics. Students can satisfy these prerequisites at the Manchester campus by taking undergraduate COMP courses as determined by the program's admissions committee based on the student's academic and professional background. For diligent undergraduate students, this program is also available as an Accelerated Master’s Program.",
+        "url": "https://catalog.unh.edu/graduate/programs-study/college-teaching/"
+    },
+    {
+        "query": "What are the admission requirements for the Genetics (GEN) program?",
+        "answer": "An applicant is expected to have completed basic courses in chemistry, biological sciences, mathematics, and physics. Otherwise well-qualified applicants will be permitted to correct deficiencies in undergraduate education by enrollment in the appropriate courses or by independent study during the first year. Applicants must submit a personal statement and three letters of recommendation. If possible, the personal statement should specify the applicant's research interests and names of potential faculty mentors. Applicants from non­-English­-speaking countries must submit current TOEFL scores in addition to the items listed above.",
+        "url": "https://catalog.unh.edu/graduate/programs-study/college-teaching/"
+    },
+    {
+        "query": "What are the degree requirements for the Nutrition and Dietetics (M.S.) program?",
+        "answer": "The Master of Science in Nutrition and Dietetics requires that students complete required coursework, including over 1,200 hours of practicum-based learning and related course work in food service, community and clinical experiences. The competencies integrated into the program reflect those established by ACEND.\n\nStudents must earn a B- or better in graduate courses to earn credit toward the degree.",
+        "url": "https://catalog.unh.edu/graduate/programs-study/nutritional-sciences/nutrition-dietetics-ms/#requirementstext"
     }
 ]
