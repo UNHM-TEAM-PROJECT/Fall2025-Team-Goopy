@@ -160,7 +160,7 @@ if __name__ == "__main__":
     model_name = "google/flan-t5-small"
     print(f"Loading model: {model_name}")
     
-    tokenizer = T5Tokenizer.from_pretrained(model_name)
+    tokenizer = T5Tokenizer.from_pretrained(model_name, use_fast=True)
     model = T5ForConditionalGeneration.from_pretrained(model_name)
     
     # Move model to GPU for training (if available)

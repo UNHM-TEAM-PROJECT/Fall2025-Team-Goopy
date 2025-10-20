@@ -51,10 +51,6 @@ def build_program_index(chunk_sources: List[Dict], chunk_meta: List[Dict]) -> No
             
             norm_title = normalize_text(title)
 
-            # skip section-specific pages
-            if any(s in norm_title for s in _SECTION_STOPWORDS):
-                continue
-            
             _PROGRAM_PAGES.append({
                 "title": title,
                 "url": url,
@@ -82,9 +78,11 @@ def match_program_alias(message: str) -> Optional[Dict[str, str]]:
     )
     best_idx = int(np.argmax(sims))
     best = candidates[best_idx]
-    if float(sims[best_idx]) < 0.45:
-        return None
-    return {"title": best["title"], "url": best["url"]}
+    best_score = float(sims[best_idx])
+    threshold = 0.60
+    if best_score >= threshold:
+        return {"title": best["title"], "url": best["url"]}
+    return None
 
 def update_section_stopwords(new_stopwords: List[str]) -> None:
     """Update the section stopwords used for filtering program pages."""

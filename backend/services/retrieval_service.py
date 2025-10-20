@@ -41,48 +41,6 @@ def _tier4_is_relevant_embed(query: str, idx: int) -> bool:
     thresh = float(gate.get("min_title_sim", 0.42))
     return sim >= thresh
 
-# --- Diversity helper: drop near-duplicate chunks from the same URL/section
-def _dedup_same_block_keep_order(final: List[int], k: int, ordered: List[int]) -> List[int]:
-    cfg = get_config()
-    _, chunk_texts, chunk_sources, _ = get_chunks_data()
-    try:
-        if not cfg.get("diversity", {}).get("same_block_drop", True):
-            return final[:k]
-        seen: set = set()
-        out: List[int] = []
-        for i in final:
-            if i >= len(chunk_sources) or i >= len(chunk_texts):
-                continue
-            src = chunk_sources[i] or {}
-            base_url = (src.get("url") or "").split("#")[0]
-            title_key = (src.get("title") or "").strip().lower()
-            text_key = re.sub(r"\s+", " ", (chunk_texts[i] or "").strip().lower())[:160]
-            key = (base_url, title_key, text_key[:80])
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(i)
-        if len(out) < k:
-            for i in ordered:
-                if len(out) >= k:
-                    break
-                if i in out:
-                    continue
-                if i >= len(chunk_sources) or i >= len(chunk_texts):
-                    continue
-                src = chunk_sources[i] or {}
-                base_url = (src.get("url") or "").split("#")[0]
-                title_key = (src.get("title") or "").strip().lower()
-                text_key = re.sub(r"\s+", " ", (chunk_texts[i] or "").strip().lower())[:160]
-                key = (base_url, title_key, text_key[:80])
-                if key in seen:
-                    continue
-                seen.add(key)
-                out.append(i)
-        return out[:k]
-    except Exception:
-        return final[:k]
-
 def search_chunks(
     query: str,
     topn: int = 40,
@@ -134,7 +92,7 @@ def search_chunks(
         meta_i = chunk_meta[i] if i < len(chunk_meta) else {}
         tier = meta_i.get("tier", 2)
 
-        # CHANGED: course queries → allow Tier 3 (preferred), skip only Tier 4 (program pages)
+        # course queries → allow Tier 3 (preferred), skip only Tier 4 (program pages)
         if course_norm and tier == 4:
             continue
 
@@ -393,9 +351,6 @@ def search_chunks(
                 except Exception:
                     pass
             final = dedup[:k]
-
-    if cfg.get("diversity", {}).get("enable", True):
-        final = _dedup_same_block_keep_order(final, k, ordered)
 
     retrieval_path = []
     for rank, i in enumerate(final, start=1):
