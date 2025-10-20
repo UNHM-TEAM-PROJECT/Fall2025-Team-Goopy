@@ -3,6 +3,7 @@ import sys, subprocess, json
 import shutil
 from pathlib import Path
 from datetime import datetime
+import asyncio
 
 ROOT   = Path(__file__).resolve().parents[1]
 PY     = sys.executable
@@ -14,13 +15,14 @@ sys.path.insert(0, str(ROOT / "backend"))
 from config.settings import load_retrieval_config
 from models.ml_models import initialize_models
 from services.chunk_service import load_initial_data
-from services.qa_service import _answer_question
+from routers.chat import answer_question
+from models.api_models import ChatRequest
 
 def run(cmd):
     print("→", " ".join(str(c) for c in cmd))
     subprocess.check_call(cmd)
 
-if __name__ == "__main__":
+async def main():
     if not GOLD.exists():
         raise SystemExit(f"Missing gold file: {GOLD}")
     if not EVAL.exists():
@@ -52,12 +54,11 @@ if __name__ == "__main__":
             qid = rec["id"]
             q   = rec["query"]
 
-            ans, _sources, retrieved_ids = _answer_question(q)
-
+            response = await answer_question(ChatRequest(message=q))
             fout.write(json.dumps({
                 "id": qid,
-                "model_answer": ans,
-                "retrieved_ids": retrieved_ids
+                "model_answer": response.answer,
+                "retrieved_ids": response.retrieval_path
             }, ensure_ascii=False) + "\n")
 
     print(f"Wrote predictions to {preds_path}")
@@ -78,3 +79,6 @@ if __name__ == "__main__":
     print(f" - {report_dir / 'gold.jsonl'} (copy of test data)")
     print(f" - {report_dir / 'preds.jsonl'}")
     print(f" - {report_dir / 'report.json'}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
