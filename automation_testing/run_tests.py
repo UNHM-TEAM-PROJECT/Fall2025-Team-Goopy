@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from config.settings import load_retrieval_config
 from models.ml_models import initialize_models
 from services.chunk_service import load_initial_data
+from services.session_service import clear_all_sessions
 from routers.chat import answer_question
 from models.api_models import ChatRequest
 
@@ -55,6 +56,8 @@ async def main():
             q   = rec["query"]
 
             response = await answer_question(ChatRequest(message=q))
+            clear_all_sessions()
+            
             fout.write(json.dumps({
                 "id": qid,
                 "model_answer": response.answer,
