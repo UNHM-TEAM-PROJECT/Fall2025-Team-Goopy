@@ -5,8 +5,9 @@ import numpy as np
 from models.ml_models import get_embed_model
 from config.settings import get_config
 
-# in-memory index of program pages
+# in-memory index of program pages and their embeddings
 _PROGRAM_PAGES: List[Dict[str, str]] = []
+_PROGRAM_EMBEDDINGS = None
 
 # section stopwords to filter out
 _SECTION_STOPWORDS = (
@@ -29,8 +30,10 @@ def looks_like_program_url(url: str) -> bool:
     )
 
 def build_program_index(chunk_sources: List[Dict], chunk_meta: List[Dict]) -> None:
+    global _PROGRAM_EMBEDDINGS
     _PROGRAM_PAGES.clear()
-    
+    _PROGRAM_EMBEDDINGS = None
+
     for src, meta in zip(chunk_sources, chunk_meta):
         try:
             tier = (meta or {}).get("tier")
@@ -47,7 +50,7 @@ def build_program_index(chunk_sources: List[Dict], chunk_meta: List[Dict]) -> No
                 continue
             
             norm_title = normalize_text(title)
-            
+
             # skip section-specific pages
             if any(s in norm_title for s in _SECTION_STOPWORDS):
                 continue
@@ -59,8 +62,12 @@ def build_program_index(chunk_sources: List[Dict], chunk_meta: List[Dict]) -> No
             })
         except Exception:
             continue
-    
-    print(f"Built program index with {len(_PROGRAM_PAGES)} programs")
+
+    # Precompute embeddings for all program titles
+    embed_model = get_embed_model()
+    titles = [rec["title"] for rec in _PROGRAM_PAGES]
+    _PROGRAM_EMBEDDINGS = embed_model.encode(titles, convert_to_numpy=True)
+    print(f"Built program index with {len(_PROGRAM_PAGES)} programs and precomputed embeddings")
 
 def is_blocked_program_url(url: str) -> bool:
     cfg = get_config()
@@ -180,18 +187,26 @@ def match_program_alias(message: str) -> Optional[Dict[str, str]]:
             if q_slug in url:
                 return {"title": rec["title"], "url": rec["url"]}
 
+    # fallback: embedding-based similarity (precomputed)
+    global _PROGRAM_EMBEDDINGS
     q_tokens_set = set(q_norm.split())
-    cands_overlap = [rec for rec in CANDS_ALL if (set((rec.get("norm") or "").split()) & q_tokens_set)]
-    if not cands_overlap:
-        cands_overlap = CANDS_ALL
+    candidates = [
+        (i, rec) for i, rec in enumerate(_PROGRAM_PAGES)
+        if (set(rec["norm"].split()) & q_tokens_set)
+    ]
+
+    if not candidates:
+        candidates = list(enumerate(_PROGRAM_PAGES))
 
     embed_model = get_embed_model()
-    titles = [rec["title"] for rec in cands_overlap]
-    vecs = embed_model.encode([q_raw] + titles, convert_to_numpy=True)
-    qv, tv = vecs[0], vecs[1:]
-    sims = (tv @ qv) / (np.linalg.norm(tv, axis=1) * np.linalg.norm(qv) + 1e-8)
+    q_vec = embed_model.encode([q_raw], convert_to_numpy=True)[0]
+    idxs = [i for i, _ in candidates]
+    title_vecs = _PROGRAM_EMBEDDINGS[idxs]
+    sims = (title_vecs @ q_vec) / (
+        np.linalg.norm(title_vecs, axis=1) * np.linalg.norm(q_vec) + 1e-8
+    )
     best_idx = int(np.argmax(sims))
-    best = cands_overlap[best_idx]
+    best_sim = float(sims[best_idx])
 
     if wants_ms or wants_phd or wants_cert or wants_undergrad:
         is_ms, is_phd, is_cert, is_ug = _degree_flags(best)
@@ -213,6 +228,8 @@ def match_program_alias(message: str) -> Optional[Dict[str, str]]:
 
     if float(sims[best_idx]) < 0.45:
         return None
+    
+    best = candidates[best_idx][1]
     return {"title": best["title"], "url": best["url"]}
 
 def update_section_stopwords(new_stopwords: List[str]) -> None:

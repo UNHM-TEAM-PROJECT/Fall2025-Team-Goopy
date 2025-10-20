@@ -38,3 +38,6 @@ WORKDIR /app/backend
 
 # Expose port
 EXPOSE 8003
+
+# Start backend
+CMD ["python3", "main.py"]
