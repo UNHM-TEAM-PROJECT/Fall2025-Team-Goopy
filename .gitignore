@@ -10,4 +10,6 @@ __pycache__/
 /backend/.backend-venv/
 /backend/train/models/
 /.model_cache/
-**/__pycache__/
+**/__pycache__/.eval-venv/
+.eval-venv/
+automation_testing/reports/

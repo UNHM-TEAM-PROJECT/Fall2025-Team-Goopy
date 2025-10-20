@@ -1,4 +1,4 @@
-
+#!/usr/bin/env python3
 """
 Context-only runner
 - Uses backend pipeline to answer Qs in contextual_awareness/context_gold.jsonl
@@ -6,7 +6,6 @@ Context-only runner
 - Saves:
     - context_gold.jsonl (copy of input gold)
     - preds.jsonl        (model answers + retrieved ids)
-- Optional: --score will run automation_testing/evaluator.py into the same folder.
 """
 
 from __future__ import annotations
@@ -25,11 +24,11 @@ EVAL     = AUTO_DIR / "evaluator.py"  # used only if --score is passed
 # Make backend importable
 sys.path.insert(0, str(ROOT / "backend"))
 
-# ----- Import your pipeline pieces -----
+# ----- Import pipeline pieces (align with main run_tests.py) -----
 from config.settings import load_retrieval_config
 from models.ml_models import initialize_models
 from services.chunk_service import load_initial_data
-from services.qa_service import _answer_question
+from services.query_pipeline import process_question_for_retrieval
 
 
 def main():
@@ -39,7 +38,7 @@ def main():
     args = ap.parse_args()
 
     if not GOLD.exists():
-        raise SystemExit(f" Missing contextual gold file: {GOLD}")
+        raise SystemExit(f"Missing contextual gold file: {GOLD}")
 
     # Create timestamped report directory inside contextual_awareness/reports/
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -50,51 +49,55 @@ def main():
     # Copy gold to report folder (named context_gold.jsonl)
     gold_copy = out_dir / "context_gold.jsonl"
     shutil.copy2(GOLD, gold_copy)
-    print(f"📄 Copied gold -> {gold_copy}")
+    print(f"Copied gold -> {gold_copy}")
 
-    # Initialize your pipeline (this loads retrieval config, T5 model, and chunks)
+    # Initialize the full retrieval + QA pipeline
     print("🔧 Initializing pipeline…")
     load_retrieval_config()
     initialize_models()
     load_initial_data()
 
-    # Generate predictions
+    # Generate predictions (mirror run_tests.py output shape)
     preds_path = out_dir / "preds.jsonl"
-    n = 0
+    count = 0
     with GOLD.open("r", encoding="utf-8") as fin, preds_path.open("w", encoding="utf-8") as fout:
         for line in fin:
             line = line.strip()
             if not line:
                 continue
+
             rec = json.loads(line)
             qid = rec.get("id")
-            q   = rec.get("query", "")
-            ans, _sources, retrieved_ids = _answer_question(q)
+            query = rec.get("query", "")
+
+            result = process_question_for_retrieval(query)
+            ans = result.get("answer", "")
+            retrieved_ids = result.get("retrieval_path", [])
+
             fout.write(json.dumps({
                 "id": qid,
-                "query": q,
                 "model_answer": ans,
                 "retrieved_ids": retrieved_ids
             }, ensure_ascii=False) + "\n")
-            n += 1
+            count += 1
 
-    print(f"Wrote {n} predictions -> {preds_path}")
+    print(f"Wrote {count} predictions -> {preds_path}")
 
     # Optional scoring (off by default)
     if args.score:
         if not EVAL.exists():
             print("⚠️ evaluator.py not found; skipping scoring.")
         else:
-            print(" Running evaluator.py…")
+            print("Running evaluator.py…")
             subprocess.check_call([sys.executable, str(EVAL), "--output-dir", str(out_dir)])
-            print(f" Scoring output in: {out_dir}")
+            print(f"Scoring output in: {out_dir}")
 
     print("\nDone. Context report folder:")
     print(f"  {out_dir}")
     print(f"   ├─ context_gold.jsonl")
     print(f"   └─ preds.jsonl")
     if args.score:
-        print(f"   └─ report.json (if produced)")
+        print(f"   └─ report.json")
 
 
 if __name__ == "__main__":
