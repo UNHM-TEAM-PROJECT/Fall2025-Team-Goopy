@@ -4,8 +4,9 @@ from urllib.parse import urlparse
 import numpy as np
 from models.ml_models import get_embed_model
 
-# in-memory index of program pages
+# in-memory index of program pages and their embeddings
 _PROGRAM_PAGES: List[Dict[str, str]] = []
+_PROGRAM_EMBEDDINGS = None
 
 # section stopwords to filter out
 _SECTION_STOPWORDS = (
@@ -28,8 +29,10 @@ def looks_like_program_url(url: str) -> bool:
     )
 
 def build_program_index(chunk_sources: List[Dict], chunk_meta: List[Dict]) -> None:
+    global _PROGRAM_EMBEDDINGS
     _PROGRAM_PAGES.clear()
-    
+    _PROGRAM_EMBEDDINGS = None
+
     for src, meta in zip(chunk_sources, chunk_meta):
         try:
             tier = (meta or {}).get("tier")
@@ -46,7 +49,7 @@ def build_program_index(chunk_sources: List[Dict], chunk_meta: List[Dict]) -> No
                 continue
             
             norm_title = normalize_text(title)
-            
+
             # skip section-specific pages
             if any(s in norm_title for s in _SECTION_STOPWORDS):
                 continue
@@ -58,8 +61,12 @@ def build_program_index(chunk_sources: List[Dict], chunk_meta: List[Dict]) -> No
             })
         except Exception:
             continue
-    
-    print(f"Built program index with {len(_PROGRAM_PAGES)} programs")
+
+    # Precompute embeddings for all program titles
+    embed_model = get_embed_model()
+    titles = [rec["title"] for rec in _PROGRAM_PAGES]
+    _PROGRAM_EMBEDDINGS = embed_model.encode(titles, convert_to_numpy=True)
+    print(f"Built program index with {len(_PROGRAM_PAGES)} programs and precomputed embeddings")
 
 def match_program_alias(message: str) -> Optional[Dict[str, str]]:
     if not _PROGRAM_PAGES:
@@ -87,34 +94,31 @@ def match_program_alias(message: str) -> Optional[Dict[str, str]]:
             if q_slug in url:
                 return {"title": rec["title"], "url": rec["url"]}
     
-    # fallback: embedding-based similarity
+    # fallback: embedding-based similarity (precomputed)
+    global _PROGRAM_EMBEDDINGS
     q_tokens_set = set(q_norm.split())
     candidates = [
-        rec for rec in _PROGRAM_PAGES
+        (i, rec) for i, rec in enumerate(_PROGRAM_PAGES)
         if (set(rec["norm"].split()) & q_tokens_set)
     ]
-    
+
     if not candidates:
-        candidates = _PROGRAM_PAGES
-    
+        candidates = list(enumerate(_PROGRAM_PAGES))
+
     embed_model = get_embed_model()
-    titles = [rec["title"] for rec in candidates]
-    vecs = embed_model.encode([q_raw] + titles, convert_to_numpy=True)
-    
-    q_vec = vecs[0]
-    title_vecs = vecs[1:]
-    
+    q_vec = embed_model.encode([q_raw], convert_to_numpy=True)[0]
+    idxs = [i for i, _ in candidates]
+    title_vecs = _PROGRAM_EMBEDDINGS[idxs]
     sims = (title_vecs @ q_vec) / (
         np.linalg.norm(title_vecs, axis=1) * np.linalg.norm(q_vec) + 1e-8
     )
-    
     best_idx = int(np.argmax(sims))
     best_sim = float(sims[best_idx])
-    
+
     if best_sim < 0.45:
         return None
     
-    best = candidates[best_idx]
+    best = candidates[best_idx][1]
     return {"title": best["title"], "url": best["url"]}
 
 
