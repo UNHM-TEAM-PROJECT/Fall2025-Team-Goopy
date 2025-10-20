@@ -86,7 +86,7 @@ def main():
     # Optional scoring (off by default)
     if args.score:
         if not EVAL.exists():
-            print("⚠️ evaluator.py not found; skipping scoring.")
+            print("evaluator.py not found; skipping scoring.")
         else:
             print("Running evaluator.py…")
             subprocess.check_call([sys.executable, str(EVAL), "--output-dir", str(out_dir)])
