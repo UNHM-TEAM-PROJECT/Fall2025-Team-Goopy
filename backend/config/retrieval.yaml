@@ -103,21 +103,6 @@ diversity:
   same_url_penalty: 0.9
   same_block_drop: true
 
-# strengthen the OT block and add a preferred alias for biotechnology
-program_blocklist:
-  - "/occupational-therapy-"
-  - "/occupational-therapy-ot-"
-  - "/occupational-therapy-(ot)/"
-
-program_blocklist_tokens:
-  - "occupational therapy"
-  - "otd"
-  - "ot program"
-
-# prefer a specific program URL when query matches this keyword
-preferred_program_aliases:
-  biotechnology_ms: "/graduate/programs-study/colsa/molecular-cellular-biomedical-sciences/biotechnology-industrial-biomedical-sciences-ms/"
-
 # course retrieval strictness
 course_filters:
   strict_subject_on_code: true   # only keep same-subject chunks for course-code queries

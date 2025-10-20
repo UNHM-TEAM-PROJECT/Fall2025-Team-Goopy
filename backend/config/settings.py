@@ -65,12 +65,6 @@ def load_retrieval_config() -> None:
     CFG["diversity"]["same_url_penalty"] = CFG["diversity"].get("same_url_penalty", 0.9)
     CFG["diversity"]["same_block_drop"] = CFG["diversity"].get("same_block_drop", True)
 
-    # Program blocklist defaults (can be overridden by YAML) (NEW)
-    if "program_blocklist" not in CFG:
-        CFG["program_blocklist"] = ["/occupational-therapy-"]
-    if "program_blocklist_tokens" not in CFG:
-        CFG["program_blocklist_tokens"] = ["occupational therapy", "otd"]
-
     # Override program index stopwords from YAML if present (NEW)
     try:
         stop_list = CFG.get("program_index", {}).get("section_stopwords")
