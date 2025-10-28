@@ -2,6 +2,24 @@
 Shared pipeline for preprocessing and retrieval logic used by both chat API and training script.
 """
 import re
+
+# simple external-link detector for calendar/deadline queries ===
+_CALENDAR_LINK = "https://www.unh.edu/registrar/registration-resources/calendars-important-deadlines"
+_CALENDAR_KEYWORDS = {
+    "academic calendar", "calendar", "important dates", "important deadlines",
+    "deadlines", "deadline", "add/drop", "add drop", "drop deadline", "withdraw deadline",
+    "registration deadline", "semester start", "semester end", "term start", "term end",
+    "holiday", "break", "vacation", "last day to add", "last day to drop"
+}
+def _maybe_calendar_link(message: str):
+    q = (message or "").lower()
+    if any(k in q for k in _CALENDAR_KEYWORDS):
+        return (
+            f"For up-to-date academic dates and deadlines, see the Registrar’s "
+            f"calendars and important deadlines: {_CALENDAR_LINK}"
+        )
+    return None
+
 from services.intent_service import (
     LEVEL_HINT_TOKEN,
     INTENT_TEMPLATES,
@@ -126,6 +144,21 @@ def process_question_for_retrieval(
     if new_alias and isinstance(new_alias, dict):
         alias_url = new_alias.get("url")
 
+    calendar_msg = _maybe_calendar_link(incoming_message)
+    if calendar_msg:
+        return dict(
+            answer=calendar_msg,
+            sources=[],
+            retrieval_path=[],
+            session_updates=session_updates,
+            context=None,
+            intent=None,
+            program_level=new_level,
+            program_alias=new_alias,
+            course_code=None,
+            scoped_message=scoped_message,
+        )
+ 
     # Not using scoped_message, intent_key, or course_norm as they all tank the test answers/scores
     answer, sources, retrieval_path, context = cached_answer_with_path(
         incoming_message, alias_url=alias_url, intent_key=None, course_norm=None
