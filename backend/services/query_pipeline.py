@@ -4,7 +4,6 @@ Shared pipeline for preprocessing and retrieval logic used by both chat API and 
 import re
 from services.intent_service import (
     LEVEL_HINT_TOKEN,
-    INTENT_TEMPLATES,
     detect_intent,
     detect_program_level,
     detect_correction_or_negation,

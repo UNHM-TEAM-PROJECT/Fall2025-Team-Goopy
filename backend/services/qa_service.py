@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from models.ml_models import get_qa_pipeline
 from services.chunk_service import get_chunks_data
 from services.retrieval_service import search_chunks
+from services.beam_search import generate_with_beam_search
 from text_fragments import build_text_fragment_url, choose_snippet, is_synthetic_label
 from utils.course_utils import extract_course_fallbacks
 from utils.program_utils import same_program_family
@@ -156,8 +157,26 @@ def _answer_question(
 
     if not idxs:
         return "I couldn't find relevant information in the catalog.", [], retrieval_path, None
-    # generate answer
-    try:
+    
+    # generate answer using beam search with fallback
+    qa_pipeline = get_qa_pipeline()
+    cfg = get_config()
+    beam_cfg = cfg.get("beam_search", {})
+    use_beam = beam_cfg.get("enabled", True)
+    
+    if use_beam:
+        answer = generate_with_beam_search(qa_pipeline, get_prompt(question, context), question, context)
+        if answer is None:
+            # Beam search failed, use fallback
+            result = qa_pipeline(
+                get_prompt(question, context),
+                max_new_tokens=128,
+                repetition_penalty=1.2,
+                no_repeat_ngram_size=2,
+            )
+            answer = result[0]["generated_text"].strip()
+    else:
+        # Beam search disabled, use single generation
         result = qa_pipeline(
             get_prompt(question, context),
             max_new_tokens=128,
@@ -165,11 +184,9 @@ def _answer_question(
             no_repeat_ngram_size=2,
         )
         answer = result[0]["generated_text"].strip()
-    except Exception as exc:
-        return f"ERROR running local model: {exc}", [], retrieval_path
     # apply fallbacks
     def _looks_idk(a: str) -> bool:
-        return bool(re.search(r"\bi don'?t know\b", (a or "").lower()))
+        return (a or "").strip() == UNKNOWN
 
     enriched_sources = _wrap_sources_with_text_fragments(top_chunks, question)
 

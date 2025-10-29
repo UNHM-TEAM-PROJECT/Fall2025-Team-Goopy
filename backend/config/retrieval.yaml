@@ -88,3 +88,10 @@ followups:
 course_filters:
   strict_subject_on_code: true   # only keep same-subject chunks for course-code queries
   tier3_bonus: 1.30              # keep from before
+
+# beam search configuration for answer generation
+beam_search:
+  enabled: true           # set to false to disable beam search
+  beam_width: 5           # number of beams to explore
+  num_candidates: 3       # number of candidate answers to generate and score
+  diversity_penalty: 0.3  # encourage diverse outputs (0.0 = no diversity, 1.0 = max diversity)
