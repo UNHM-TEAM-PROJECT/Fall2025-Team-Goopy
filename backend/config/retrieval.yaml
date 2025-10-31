@@ -67,8 +67,7 @@ tier4_gate:
   min_alt_sim: 0.32
 
 retrieval_sizes:
-  topn_default: 40
-  topn_with_alias: 120
+  topn_default: 120
   k: 5
 
 followups:

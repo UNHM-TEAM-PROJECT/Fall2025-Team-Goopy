@@ -108,52 +108,16 @@ def get_prompt(question: str, context: str) -> str:
         f"Detailed explanation:"
     )
 
-def _answer_question(
-    question: str,
-    alias_url: Optional[str] = None,
-    intent_key: Optional[str] = None,
-    course_norm: Optional[str] = None,
-) -> Tuple[str, List[str], List[Dict]]:
-    _, chunk_texts, chunk_sources, _ = get_chunks_data()
+def _answer_question(question: str,) -> Tuple[str, List[str], List[Dict]]:
     qa_pipeline = get_qa_pipeline()
     cfg = get_config()
 
     topn_cfg = cfg.get("search", {})
-    topn_local = int(topn_cfg.get("topn_with_alias", 80)) if alias_url else int(topn_cfg.get("topn_base", 40))
+    topn_local = int(topn_cfg.get("topn_default", 40))
     # honor YAML k
     k_local = int(cfg.get("retrieval_sizes", {}).get("k", cfg.get("k", 5)))
-    idxs, retrieval_path = search_chunks(
-        question, topn=topn_local, k=k_local, alias_url=alias_url, intent_key=intent_key, course_norm=course_norm
-    )
+    idxs, retrieval_path = search_chunks(question, topn=topn_local, k=k_local)
     top_chunks, context = build_context_from_indices(idxs)
-
-    def _url_same_family(u: str, base: Optional[str]) -> bool:
-        return bool(base) and same_program_family(u or "", base or "")
-
-    def _has_direct_fact(text: str) -> bool:
-        t = (text or "")[:500]
-        return bool(re.search(r"\b\d{1,3}\b", t)) or bool(re.search(r"\b(credit|credits|gpa|gre|thesis|option)\b", t, re.I))
-
-    if alias_url and idxs:
-        top5 = idxs[:5]
-        prefer_idx = None
-        for i in top5:
-            src = (chunk_sources[i] if i < len(chunk_sources) else {}) or {}
-            if _url_same_family(src.get("url",""), alias_url) and _has_direct_fact(chunk_texts[i]):
-                prefer_idx = i
-                break
-        if prefer_idx is not None and prefer_idx != idxs[0]:
-            idxs.remove(prefer_idx)
-            idxs.insert(0, prefer_idx)
-            for r in retrieval_path:
-                if r.get("idx") == prefer_idx:
-                    r["rank"] = 1
-            rank_counter = 2
-            for r in retrieval_path:
-                if r.get("idx") != prefer_idx:
-                    r["rank"] = rank_counter
-                    rank_counter += 1
-            top_chunks, context = build_context_from_indices(idxs)
 
     if not idxs:
         return "I couldn't find relevant information in the catalog.", [], retrieval_path, None
@@ -190,26 +154,30 @@ def _answer_question(
 
     enriched_sources = _wrap_sources_with_text_fragments(top_chunks, question)
 
+    # Simple fallbacks without intent detection
     # degree credits fallback
-    if intent_key == "degree_credits":
+    qn_lower = (question or "").lower()
+    if any(tok in qn_lower for tok in ["credits required", "how many credits", "total credits", "credit requirement"]):
         hit = _extract_best_credits(top_chunks)
         if hit:
             _, src, num = hit
             if _looks_idk(answer) or not re.search(r"\b\d{1,3}\b", answer):
                 answer = f"{num}."
+    
     # GRE fallback
-    asked_gre = bool(re.search(r"\b(gre|gmat|test score|test scores)\b", (question or "").lower()))
-    gre_hit = _extract_gre_requirement(question, top_chunks)
-    if gre_hit:
-        _, _, yesno = gre_hit
-        if _looks_idk(answer):
-            answer = f"{yesno}."
-    elif asked_gre and (intent_key == "admissions"):
-        answer = ("GRE requirements are program-specific. Many UNH graduate programs do not require GRE, "
-                  "but some do. Check the Admission Requirements section on your program page for the current policy.")
+    asked_gre = bool(re.search(r"\b(gre|gmat|test score|test scores)\b", qn_lower))
+    if asked_gre:
+        gre_hit = _extract_gre_requirement(question, top_chunks)
+        if gre_hit:
+            _, _, yesno = gre_hit
+            if _looks_idk(answer):
+                answer = f"{yesno}."
+        elif _looks_idk(answer):
+            answer = ("GRE requirements are program-specific. Many UNH graduate programs do not require GRE, "
+                      "but some do. Check the Admission Requirements section on your program page for the current policy.")
 
-    # course fallbacks
-    if course_norm and intent_key == "course_info":
+    # course fallbacks (simple pattern matching instead of course_norm)
+    if re.search(r"\b[A-Z]{2,4}\s*\d{3,4}\b", question):
         cf = extract_course_fallbacks(top_chunks)
         need_help = _looks_idk(answer) or \
                    (not re.search(r"credits|prereq|grade", answer, re.I))
@@ -223,6 +191,7 @@ def _answer_question(
                 parts.append(f"Grade Mode: {cf['grademode']}")
             if parts:
                 answer = ". ".join(parts) + "."
+    
     enriched_all = enriched_sources + [src for _, src in top_chunks[3:]]
     seen = set()
     citation_lines = []
@@ -239,11 +208,7 @@ def _answer_question(
 
 @lru_cache(maxsize=128)
 def _cached_answer_core(cache_key: str) -> Tuple[str, List[str], List[Dict]]:
-    msg, alias, intent, course = cache_key.split("|||", 3)
-    alias = alias or None
-    intent = intent or None
-    course = course or None
-    return _answer_question(msg, alias_url=alias, intent_key=intent, course_norm=course)
+    return _answer_question(cache_key)
 
 def cached_answer_with_path(
     message: str,
@@ -251,5 +216,5 @@ def cached_answer_with_path(
     intent_key: Optional[str] = None,
     course_norm: Optional[str] = None,
 ) -> Tuple[str, List[str], List[Dict]]:
-    cache_key = f"{message}|||{alias_url or ''}|||{intent_key or ''}|||{course_norm or ''}"
-    return _cached_answer_core(cache_key)
+    # Simplified: ignore broken parameters, just cache by message
+    return _cached_answer_core(message)

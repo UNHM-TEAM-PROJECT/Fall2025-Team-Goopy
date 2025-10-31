@@ -1,13 +1,11 @@
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
 import numpy as np
 from config.settings import get_config, get_policy_terms
 from models.ml_models import get_embed_model
 from services.chunk_service import get_chunks_data, get_chunk_norms
 from services.intent_service import is_admissions_url, is_degree_requirements_url, has_admissions_terms, has_policy_terms
-from utils.course_utils import url_contains_course, title_starts_with_course, extract_title_leading_subject
-from utils.program_utils import same_program_family
 
 def _tier_boost(tier: int) -> float:
     cfg = get_config()
@@ -44,11 +42,12 @@ def _tier4_is_relevant_embed(query: str, idx: int) -> bool:
 def search_chunks(
     query: str,
     topn: int = 40,
-    k: int = 5,
-    alias_url: Optional[str] = None,
-    intent_key: Optional[str] = None,
-    course_norm: Optional[str] = None
+    k: int = 5
 ) -> Tuple[List[int], List[Dict[str, Any]]]:
+    """
+    Simplified search without broken intent/program detection.
+    Uses only the query text and basic tier filtering.
+    """
     cfg = get_config()
     policy_terms = get_policy_terms()
     embed_model = get_embed_model()
@@ -74,11 +73,14 @@ def search_chunks(
     cand_idxs = np.argsort(-sims)[:topn * 2].tolist()
     
     q_lower = (query or "").lower()
-    allow_program = bool(alias_url)
     looks_policy = any(term in q_lower for term in policy_terms) or has_policy_terms(q_lower)
-    looks_admissions = (intent_key == "admissions") or any(tok in q_lower for tok in [
+    looks_admissions = any(tok in q_lower for tok in [
         "admission", "admissions", "apply", "gre", "gmat", "test score", "test scores", "toefl", "ielts"
     ])
+    
+    # Simple course code detection (without broken course_norm param)
+    course_code_pattern = re.compile(r'\b[A-Z]{2,4}\s*\d{3,4}\b')
+    has_course_code = bool(course_code_pattern.search(query))
 
     # extract query terms
     query_terms = set(re.findall(r'\b\w+\b', q_lower))
@@ -92,77 +94,40 @@ def search_chunks(
         meta_i = chunk_meta[i] if i < len(chunk_meta) else {}
         tier = meta_i.get("tier", 2)
 
-        # course queries → allow Tier 3 (preferred), skip only Tier 4 (program pages)
-        if course_norm and tier == 4:
+        # Skip program pages (Tier 4) for course queries
+        if has_course_code and tier == 4:
             continue
 
-        # Strict same-subject filter for course-code queries
-        # Keep only: (a) exact course search hits (Tier-2), (b) titles that start with the exact code,
-        # or (c) titles whose leading subject (e.g., 'COMP') matches the asked subject.
-        if course_norm and cfg.get("course_filters", {}).get("strict_subject_on_code", True):
-            try:
-                subj = course_norm.split()[0].upper()
-                src_i = chunk_sources[i] if i < len(chunk_sources) else {}
-                t_i = (src_i.get("title") or "")
-                u_i = (src_i.get("url") or "")
-
-                lead = extract_title_leading_subject(t_i) or ""
-                url_has_exact = url_contains_course(u_i, course_norm)
-                title_starts = title_starts_with_course(t_i, course_norm)
-
-                if not (url_has_exact or title_starts or (lead == subj)):
-                    continue
-            except Exception:
-                # Be conservative: if anything is odd, drop it
-                continue
-
+        # Policy queries: filter Tier 3/4
         if looks_policy:
             if tier == 3:
                 if not has_policy_terms(chunk_text_lower):
                     continue
             if tier == 4:
-                src_i = chunk_sources[i] if i < len(chunk_sources) else {}
-                url_i = (src_i.get("url") or "")
-                if alias_url:
-                    if not same_program_family(url_i, alias_url):
-                        continue
-                    if not has_policy_terms(chunk_text_lower):
-                        continue
-                else:
+                # Skip program pages for policy queries unless they have policy terms
+                if not has_policy_terms(chunk_text_lower):
                     continue
+        
+        # Admissions queries: filter Tier 3
         if looks_admissions:
             if tier == 3 and not has_admissions_terms(chunk_text_lower):
                 continue
+        
+        # Basic relevance check
         term_matches = len(query_terms.intersection(set(re.findall(r'\b\w+\b', chunk_text_lower))))
         if term_matches == 0 and sims[i] < 0.1:
             continue
-        if course_norm and tier == 2:
-            src_i = chunk_sources[i] if i < len(chunk_sources) else {}
-            title_i = (src_i.get("title") or "")
-            url_i = (src_i.get("url") or "")
-            if not (url_contains_course(url_i, course_norm) or title_starts_with_course(title_i, course_norm)):
-                continue
                 
-        # tier filtering
-        if tier in (3, 4) and not allow_program:
-            continue
-        if tier == 4 and allow_program:
-            src_i = chunk_sources[i] if i < len(chunk_sources) else {}
-            if alias_url and same_program_family(src_i.get("url", ""), alias_url):
-                pass
-            else:
-                if not _tier4_is_relevant_embed(query, i):
-                    continue
+        # Tier filtering: allow most tiers but check relevance for Tier 4
+        if tier == 4:
+            if not _tier4_is_relevant_embed(query, i):
+                continue
         
         filtered.append(i)
 
     # fallback if no results
     if not filtered:
-        allowed_tiers = {1, 2} if not allow_program else {1, 2, 3, 4}
-        filtered = [
-            i for i in range(len(chunk_meta))
-            if ((chunk_meta[i] or {}).get("tier") in allowed_tiers)
-        ] or list(range(len(chunk_meta)))
+        filtered = list(range(len(chunk_meta)))
 
     # rescore with bonuses
     policy_nudge = float(cfg.get("nudges", {}).get("policy_acadreg_url", 1.15))
@@ -177,31 +142,7 @@ def search_chunks(
         # policy nudge
         nudge = policy_nudge if looks_policy and _is_acad_reg_url(src_i.get("url", "")) else 1.0
 
-        # same program bonus
-        same_prog_bonus = 1.0
-        if alias_url and same_program_family(src_i.get("url", ""), alias_url):
-            same_prog_bonus = float(cfg.get("nudges", {}).get("same_program_bonus", 1.9))
-
-        # course bonus → prefer Tier 3, allow Tier 2 fallback, penalize Tier 4
-        course_bonus = 1.0
-        if course_norm:
-            url = (src_i.get("url") or "")
-            title = (src_i.get("title") or "")
-            nc = cfg.get("nudges", {}) or {}
-            url_boost = float(nc.get("course_url_bonus", 1.9))
-            title_boost = float(nc.get("course_title_bonus", 1.5))
-            tier34_pen = float(nc.get("other_program_tier34_penalty", 0.25))
-            if url_contains_course(url, course_norm):
-                course_bonus = url_boost            # Tier 2 (search page) fallback
-            elif title_starts_with_course(title, course_norm):
-                course_bonus = title_boost          # Title matches course code
-            elif tier == 3:
-                course_bonus = 1.3                  # BOOST detailed course description
-            elif tier == 4:
-                course_bonus = tier34_pen           # penalize program pages
-            else:
-                course_bonus = 1.0
-
+        # admissions bonus
         admissions_bonus = 1.0
         if looks_admissions:
             url_i = (src_i.get("url") or "")
@@ -213,28 +154,12 @@ def search_chunks(
             if is_degree_requirements_url(url_i):
                 admissions_bonus *= 0.85
 
-        credits_bonus = 1.0
-        if intent_key == "degree_credits":
-            txt_i = (chunk_texts[i] or "").lower()
-            if re.search(r"\b\d{1,3}\b", txt_i) and ("credit" in txt_i):
-                credits_bonus *= 1.4
-                if re.search(r"\b(total|min(?:imum)?|required)\b", txt_i):
-                    credits_bonus *= 1.2
-
-        title_l = (src_i.get("title") or "").lower()
-        section_bonus = 1.0
-        if intent_key in ("degree_credits", "degree_requirements"):
-            if alias_url and same_program_family(src_i.get("url", ""), alias_url):
-                if ("degree requirements" in title_l) or re.search(r"\brequirements?\b", title_l):
-                    section_bonus *= 1.6
-            if any(s in title_l for s in ("career opportunities", "overview", "sample", "plan of study")):
-                section_bonus *= 0.85
-
-        rescored.append((i, base * nudge * same_prog_bonus * course_bonus * admissions_bonus * credits_bonus * section_bonus))
+        rescored.append((i, base * nudge * admissions_bonus))
 
     rescored.sort(key=lambda x: x[1], reverse=True)
     ordered = [i for i, _ in rescored]
 
+    # Prioritize Tier 1 for policy queries
     if looks_policy:
         lead_t1 = None
         for i in ordered:
@@ -268,89 +193,6 @@ def search_chunks(
             final.append(i)
 
     final = final[:k]
-
-    # Do not force Tier-4 program page for course queries
-    want_program_page = bool(alias_url) and bool(cfg.get("guarantees", {}).get("ensure_tier4_on_program", True)) and (intent_key != "course_info")
-    if want_program_page:
-        def _is_t4(i: int) -> bool:
-            return (chunk_meta[i] or {}).get("tier") == 4
-        
-        def _same_family_idx(i: int) -> bool:
-            try:
-                return same_program_family((chunk_sources[i] or {}).get("url", ""), alias_url or "")
-            except Exception:
-                return False
-
-        has_tier4_same = any(_is_t4(i) and _same_family_idx(i) for i in final)
-
-        if not has_tier4_same:
-            best_same = (-1, -1.0)
-            best_any = (-1, -1.0)
-            for i, score in rescored:
-                if not _is_t4(i):
-                    continue
-                if _same_family_idx(i):
-                    if score > best_same[1]:
-                        best_same = (i, score)
-                if score > best_any[1]:
-                    best_any = (i, score)
-
-            if best_same[0] == -1:
-                for j in range(len(chunk_meta)):
-                    meta_j = chunk_meta[j] or {}
-                    if meta_j.get("tier") != 4:
-                        continue
-                    if not _same_family_idx(j):
-                        continue
-                    sc = float(sims[j]) * _tier_boost(4)
-                    if sc > best_same[1]:
-                        best_same = (j, sc)
-
-            inject = best_same[0] if best_same[0] != -1 else best_any[0]
-            if inject != -1 and inject not in final:
-                final.append(inject)
-                seen_idx = set()
-                dedup = []
-                for ii in final:
-                    if ii not in seen_idx:
-                        seen_idx.add(ii)
-                        dedup.append(ii)
-                if len(dedup) > k:
-                    keepers = {dedup[0], inject}
-                    trimmed = [x for x in dedup if x in keepers]
-                    for x in dedup:
-                        if len(trimmed) >= k:
-                            break
-                        if x not in trimmed:
-                            trimmed.append(x)
-                    dedup = trimmed[:k]
-                final = dedup
-
-    # Ensure a course page appears by appending + prioritizing (Tier 2/3 only)
-    if course_norm and not any(url_contains_course((chunk_sources[i] or {}).get("url", ""), course_norm) for i in final):
-        best_course = (-1, -1.0)
-        for i, score in rescored:
-            if (chunk_meta[i] or {}).get("tier") == 4:
-                continue
-            if url_contains_course((chunk_sources[i] or {}).get("url", ""), course_norm) or \
-               title_starts_with_course((chunk_sources[i] or {}).get("title", ""), course_norm):
-                if score > best_course[1]:
-                    best_course = (i, score)
-        if best_course[0] != -1:
-            final.append(best_course[0])
-            seen_idx = set()
-            dedup = []
-            for ii in final:
-                if ii not in seen_idx:
-                    seen_idx.add(ii)
-                    dedup.append(ii)
-            if dedup and dedup[-1] != best_course[0]:
-                try:
-                    dedup.remove(best_course[0])
-                    dedup.insert(0, best_course[0])
-                except Exception:
-                    pass
-            final = dedup[:k]
 
     retrieval_path = []
     for rank, i in enumerate(final, start=1):
