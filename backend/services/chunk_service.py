@@ -1,7 +1,7 @@
 import json
 import pickle
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from hierarchy import compute_tier
 from models.ml_models import get_embed_model
@@ -18,6 +18,18 @@ chunk_texts: List[str] = []
 chunk_sources: List[Dict[str, Any]] = []
 chunk_meta: List[Dict[str, Any]] = []
 CHUNK_NORMS: Optional[np.ndarray] = None
+
+def build_context_from_indices(idxs: List[int]) -> Tuple[List[Tuple[str, Dict[str, Any]]], str]:
+    _, chunk_texts, chunk_sources, _ = get_chunks_data()
+    if not idxs:
+        return [], ""
+    top_chunks = [(chunk_texts[i], chunk_sources[i]) for i in idxs if i < len(chunk_texts)]
+    parts = []
+    for text, source in top_chunks:
+        title = source.get("title", "Source")
+        title = title.split(" - ")[-1] if " - " in title else title
+        parts.append(f"{title}: {text}")
+    return top_chunks, "\n\n".join(parts)
 
 def _compute_meta_from_source(src: Dict[str, Any]) -> Dict[str, Any]:
     return compute_tier(src.get("url", ""), src.get("title", ""))

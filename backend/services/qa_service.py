@@ -2,12 +2,11 @@ import re
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 from models.ml_models import get_qa_pipeline
-from services.chunk_service import get_chunks_data
+from services.chunk_service import build_context_from_indices
 from services.retrieval_service import search_chunks
 from services.beam_search import generate_with_beam_search
 from text_fragments import build_text_fragment_url, choose_snippet, is_synthetic_label
 from utils.course_utils import extract_course_fallbacks
-from utils.program_utils import same_program_family
 from config.settings import get_config
 
 UNKNOWN = "I don't have that information."
@@ -66,7 +65,6 @@ def _extract_best_credits(
         return (best[0], best[1], best[2])
     return None
 
-
 def _extract_gre_requirement(
     question: str,
     chunks: List[Tuple[str, Dict]]
@@ -84,18 +82,6 @@ def _extract_gre_requirement(
                 return (text, src, "Yes")
     
     return None
-
-def build_context_from_indices(idxs: List[int]) -> Tuple[List[Tuple[str, Dict[str, Any]]], str]:
-    _, chunk_texts, chunk_sources, _ = get_chunks_data()
-    if not idxs:
-        return [], ""
-    top_chunks = [(chunk_texts[i], chunk_sources[i]) for i in idxs if i < len(chunk_texts)]
-    parts = []
-    for text, source in top_chunks:
-        title = source.get("title", "Source")
-        title = title.split(" - ")[-1] if " - " in title else title
-        parts.append(f"{title}: {text}")
-    return top_chunks, "\n\n".join(parts)
 
 def get_prompt(question: str, context: str) -> str:
     return (
@@ -164,19 +150,7 @@ def _answer_question(question: str,) -> Tuple[str, List[str], List[Dict]]:
             if _looks_idk(answer) or not re.search(r"\b\d{1,3}\b", answer):
                 answer = f"{num}."
     
-    # GRE fallback
-    asked_gre = bool(re.search(r"\b(gre|gmat|test score|test scores)\b", qn_lower))
-    if asked_gre:
-        gre_hit = _extract_gre_requirement(question, top_chunks)
-        if gre_hit:
-            _, _, yesno = gre_hit
-            if _looks_idk(answer):
-                answer = f"{yesno}."
-        elif _looks_idk(answer):
-            answer = ("GRE requirements are program-specific. Many UNH graduate programs do not require GRE, "
-                      "but some do. Check the Admission Requirements section on your program page for the current policy.")
-
-    # course fallbacks (simple pattern matching instead of course_norm)
+    # course fallbacks (simple pattern matching)
     if re.search(r"\b[A-Z]{2,4}\s*\d{3,4}\b", question):
         cf = extract_course_fallbacks(top_chunks)
         need_help = _looks_idk(answer) or \
@@ -192,6 +166,7 @@ def _answer_question(question: str,) -> Tuple[str, List[str], List[Dict]]:
             if parts:
                 answer = ". ".join(parts) + "."
     
+    # build sources
     enriched_all = enriched_sources + [src for _, src in top_chunks[3:]]
     seen = set()
     citation_lines = []
