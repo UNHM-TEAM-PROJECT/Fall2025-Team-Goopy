@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any, Dict, Tuple
 import yaml
+import os
 
 # global configuration
 CFG: Dict[str, Any] = {}
@@ -49,3 +50,9 @@ def get_config() -> Dict[str, Any]:
 
 def get_policy_terms() -> Tuple[str, ...]:
     return POLICY_TERMS
+
+# Embedding model for retrieval (NOT the answer LLM)
+# Default stays MiniLM; can override via env var.
+EMBED_MODEL_NAME = os.getenv("EMBED_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2")
+# --- Query Transformation ---
+ENABLE_QUERY_REWRITER = True  # set False to disable LLM rewrite; rules still apply
