@@ -70,6 +70,15 @@ retrieval_sizes:
   topn_default: 120
   k: 5
 
+# chunking configuration
+chunking:
+  enable_contextual_headers: true     # prepend section hierarchy to chunks
+  enable_overlap: true                # use overlapping chunks
+  text_chunk_size: 3                  # number of text items per chunk
+  text_overlap: 1                     # overlap for text chunks
+  list_chunk_size: 5                  # number of list items per chunk
+  list_overlap: 2                     # overlap for list chunks
+
 followups:
   hints:
     - "for "

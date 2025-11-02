@@ -6,6 +6,7 @@ import numpy as np
 from hierarchy import compute_tier
 from models.ml_models import get_embed_model
 from utils.program_utils import build_program_index
+from config.settings import get_config
 
 # paths
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -36,12 +37,10 @@ def _compute_meta_from_source(src: Dict[str, Any]) -> Dict[str, Any]:
 
 def save_chunks_cache() -> None:
     global chunks_embeddings, chunk_texts, chunk_sources, chunk_meta
-    
     if not chunk_texts or chunks_embeddings is None:
         return
     
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    
     with open(CACHE_PATH, "wb") as f:
         pickle.dump(
             {
@@ -91,22 +90,65 @@ def load_chunks_cache() -> bool:
 def load_json_file(path: str) -> None:
     global chunks_embeddings, chunk_texts, chunk_sources, chunk_meta
     
+    cfg = get_config()
     embed_model = get_embed_model()
     page_count = 0
     new_texts: List[str] = []
     new_sources: List[Dict[str, Any]] = []
     new_meta: List[Dict[str, Any]] = []
     
-    def add_chunk(text: str, title: str, url: str) -> None:
+    def add_chunk_with_context(text: str, title: str, url: str) -> None:
+        """Add a chunk with contextual header prepended."""
         # Only add if at least 3 words and either contains sentence-ending punctuation or is long enough
         word_count = len(text.split())
         has_sentence_punct = any(p in text for p in ".!?")
         min_length = 30
         if word_count >= 3 and (has_sentence_punct or len(text) >= min_length):
-            new_texts.append(text)
+            # Prepend contextual header to improve retrieval
+            enable_headers = cfg.get("chunking", {}).get("enable_contextual_headers", True)
+            if enable_headers:
+                contextual_chunk = f"Section: {title}\n\n{text}"
+            else:
+                contextual_chunk = text
+            new_texts.append(contextual_chunk)
             src = {"title": title, "url": url}
             new_sources.append(src)
             new_meta.append(_compute_meta_from_source(src))
+    
+    def add_chunk(text: str, title: str, url: str) -> None:
+        """Wrapper for backward compatibility."""
+        add_chunk_with_context(text, title, url)
+    
+    def create_overlapping_chunks(items: List[str], title: str, url: str, chunk_size: int = 3, overlap: int = 1) -> None:
+        """
+        Create overlapping chunks from a list of text items.
+        
+        Args:
+            items: List of text items (sentences, paragraphs, or list items)
+            title: Section title for context
+            url: Source URL
+            chunk_size: Number of items per chunk
+            overlap: Number of items to overlap between chunks
+        """
+        if not items:
+            return
+        
+        # If we have few items, just combine them
+        if len(items) <= chunk_size:
+            combined = " ".join(items)
+            add_chunk(combined, title, url)
+            return
+        
+        # Create overlapping chunks
+        for i in range(0, len(items), chunk_size - overlap):
+            chunk_items = items[i:i + chunk_size]
+            if chunk_items:
+                combined = " ".join(chunk_items)
+                add_chunk(combined, title, url)
+            
+            # Stop if we've reached the end
+            if i + chunk_size >= len(items):
+                break
     
     def process_section(
         section: Dict[str, Any],
@@ -132,22 +174,51 @@ def load_json_file(path: str) -> None:
         # process text content
         texts = section.get("text", [])
         if texts:
+            # Collect valid text items
+            valid_texts = []
             for text_item in texts:
                 if isinstance(text_item, str):
                     stripped = text_item.strip()
                     if stripped:
-                        add_chunk(stripped, full_title, url)
+                        valid_texts.append(stripped)
+            
+            # Create overlapping chunks from text items
+            if valid_texts:
+                enable_overlap = cfg.get("chunking", {}).get("enable_overlap", True)
+                if enable_overlap:
+                    text_chunk_size = cfg.get("chunking", {}).get("text_chunk_size", 3)
+                    text_overlap = cfg.get("chunking", {}).get("text_overlap", 1)
+                    create_overlapping_chunks(valid_texts, full_title, url, 
+                                            chunk_size=text_chunk_size, overlap=text_overlap)
+                else:
+                    # Original behavior: add each text item separately
+                    for text in valid_texts:
+                        add_chunk(text, full_title, url)
         
         # process lists (filter out short navigational items)
         lists = section.get("lists", [])
         if lists:
             for list_group in lists:
                 if isinstance(list_group, list):
+                    valid_items = []
                     for item in list_group:
                         if isinstance(item, str):
                             stripped = item.strip()
                             if stripped:
-                                add_chunk(stripped, full_title, url)
+                                valid_items.append(stripped)
+                    
+                    # Create overlapping chunks from list items
+                    if valid_items:
+                        enable_overlap = cfg.get("chunking", {}).get("enable_overlap", True)
+                        if enable_overlap:
+                            list_chunk_size = cfg.get("chunking", {}).get("list_chunk_size", 5)
+                            list_overlap = cfg.get("chunking", {}).get("list_overlap", 2)
+                            create_overlapping_chunks(valid_items, full_title, url,
+                                                    chunk_size=list_chunk_size, overlap=list_overlap)
+                        else:
+                            # Original behavior: add each list item separately
+                            for item in valid_items:
+                                add_chunk(item, full_title, url)
         
         # process subsections recursively
         subsections = section.get("subsections", [])
