@@ -16,6 +16,7 @@ from services.intent_service import (
 from services.qa_service import cached_answer_with_path
 from utils.course_utils import detect_course_code, COURSE_CODE_RX
 from utils.program_utils import match_program_alias
+from services.query_transform_service import transform_query
 
 def process_question_for_retrieval(
     incoming_message,
@@ -46,16 +47,23 @@ def process_question_for_retrieval(
     if isinstance(incoming_message, list):
         incoming_message = " ".join(incoming_message)
 
+    # Apply query transformation before intent detection and retrieval
+    user_query = incoming_message
+    _transformed = transform_query(user_query)
+    if _transformed != user_query:
+        print(f"[QueryTransform] Original: {user_query} -> Transformed: {_transformed}")
+    user_query = _transformed
+
     # update session context
-    new_intent = detect_intent(incoming_message, prev_intent=sess.get("intent"))
+    new_intent = detect_intent(user_query, prev_intent=sess.get("intent"))
     new_level = detect_program_level(
-        incoming_message,
+        user_query,
         fallback=sess.get("program_level") or "unknown"
     )
-    match = match_program_alias(incoming_message)
+    match = match_program_alias(user_query)
     new_alias = match or sess.get("program_alias")
 
-    corr = detect_correction_or_negation(incoming_message)
+    corr = detect_correction_or_negation(user_query)
     if corr.get("negated_level"):
         neg = corr["negated_level"]
         if sess.get("program_level") == neg:
@@ -65,13 +73,13 @@ def process_question_for_retrieval(
         new_level = corr["new_level"]
     if any(corr.values()):
         if sess.get("last_question"):
-            incoming_message = sess.get("last_question")
+            user_query = sess.get("last_question")
 
     try:
         if new_alias and isinstance(new_alias, dict) and new_level and new_level != "unknown":
             if alias_conflicts_with_level(new_alias, new_level):
                 level_hint = LEVEL_HINT_TOKEN.get(new_level, "")
-                hinted_message = incoming_message + (f" {level_hint}" if level_hint else "")
+                hinted_message = user_query + (f" {level_hint}" if level_hint else "")
                 rematch = match_program_alias(hinted_message)
                 new_alias = rematch if rematch else None
     except Exception:
@@ -83,13 +91,13 @@ def process_question_for_retrieval(
             "url": new_alias.get("url", ""),
         }
 
-    is_followup = looks_like_followup(incoming_message) or any(corr.values())
-    base_topic = incoming_message
+    is_followup = looks_like_followup(user_query) or any(corr.values())
+    base_topic = user_query
     if is_followup and sess.get("last_question"):
         base_topic = sess.get("last_question")
 
     try:
-        explicit_prog = explicit_program_mention(incoming_message)
+        explicit_prog = explicit_program_mention(user_query)
 
         if is_followup and sess.get("program_alias") and not explicit_prog:
             new_alias = sess.get("program_alias")
@@ -109,8 +117,8 @@ def process_question_for_retrieval(
 
     detected_course = detect_course_code(base_topic)
     if not detected_course and (sess.get("intent") == "course_info"):
-        if re.search(r"\\bwhat about\\b", incoming_message, re.I) or COURSE_CODE_RX.search(incoming_message.upper()):
-            detected_course = detect_course_code(incoming_message)
+        if re.search(r"\bwhat about\b", user_query, re.I) or COURSE_CODE_RX.search(user_query.upper()):
+            detected_course = detect_course_code(user_query)
 
     # session updates
     session_updates = dict(
@@ -128,7 +136,7 @@ def process_question_for_retrieval(
 
     # Not using scoped_message, intent_key, or course_norm as they all tank the test answers/scores
     answer, sources, retrieval_path, context = cached_answer_with_path(
-        incoming_message, alias_url=alias_url, intent_key=None, course_norm=None
+        user_query, alias_url=alias_url, intent_key=None, course_norm=None
     )
 
     return dict(

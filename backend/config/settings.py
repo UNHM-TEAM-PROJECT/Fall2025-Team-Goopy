@@ -73,3 +73,6 @@ import os
 # Embedding model for retrieval (NOT the answer LLM)
 # Default stays MiniLM; can override via env var.
 EMBED_MODEL_NAME = os.getenv("EMBED_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2")
+
+# --- Query Transformation ---
+ENABLE_QUERY_REWRITER = True  # set False to disable LLM rewrite; rules still apply

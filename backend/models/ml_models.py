@@ -59,3 +59,45 @@ def get_qa_pipeline() -> Any:
     if qa_pipeline is None:
         raise RuntimeError("QA pipeline not initialized. Call initialize_models() first.")
     return qa_pipeline
+
+def _ensure_qa_pipeline():
+    """
+    Ensure the text2text pipeline is available. If initialize_models() was not
+    called elsewhere (e.g., app startup), try to initialize it now with defaults.
+    """
+    global qa_pipeline
+    if qa_pipeline is None:
+        # initialize with defaults; this mirrors initialize_models(False) semantics
+        initialize_models(fine_tuned=True)
+    return qa_pipeline
+
+def call_model(prompt: str) -> str:
+    """
+    Generic callable used by services/query_transform_service.py for short rewrites.
+    It uses the existing text2text 'qa_pipeline' (FLAN-T5 small or your finetuned variant).
+    Returns the generated text as a stripped string.
+    """
+    pipe = _ensure_qa_pipeline()
+    try:
+        # Keep decoding deterministic for stability; tweak as you like.
+        outputs = pipe(
+            prompt,
+            max_new_tokens=64,
+            do_sample=False,
+            temperature=0.0,
+            num_return_sequences=1,
+            clean_up_tokenization_spaces=True
+        )
+        if isinstance(outputs, list) and outputs:
+            text = outputs[0].get("generated_text") or outputs[0].get("summary_text") or str(outputs[0])
+        else:
+            # Fallback to string conversion if pipeline returns a dict
+            text = str(outputs)
+        return (text or "").strip()
+    except Exception as e:
+        # Surface a concise message; the caller has its own fallback path.
+        raise RuntimeError(f"call_model generation failed: {e}") from e
+
+def generate_text(prompt: str) -> str:
+    """Alias to call_model for compatibility."""
+    return call_model(prompt)
