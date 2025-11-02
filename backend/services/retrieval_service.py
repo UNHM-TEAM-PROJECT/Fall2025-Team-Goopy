@@ -21,10 +21,16 @@ from services.gold_set_service import get_gold_manager
 
 def _tier_boost(tier: int) -> float:
     cfg = get_config()
-    if tier == 0:  # Gold set
-        return float(cfg.get("gold_set", {}).get("tier_boost", 3.0))
+    
+    # If gold set is disabled, treat Tier 0 chunks as Tier 2 (general info)
+    if tier == 0:
+        gold_enabled = cfg.get("gold_set", {}).get("enabled", True)
+        if not gold_enabled:
+            tier = 2  # Demote gold chunks to regular tier
+        else:
+            return float(cfg.get("gold_set", {}).get("tier_boost", 3.0))
+    
     return float(cfg.get("tier_boosts", {}).get(tier, 1.0))
-
 def _is_acad_reg_url(url: str) -> bool:
     return isinstance(url, str) and "/graduate/academic-regulations-degree-requirements/" in url
 
@@ -60,6 +66,13 @@ def _apply_gold_boost(
     chunk_sources: List[Dict],
     chunk_meta: List[Dict]
 ) -> List[Tuple[int, float]]:
+    # Check if gold set is enabled
+    cfg = get_config()
+    gold_enabled = cfg.get("gold_set", {}).get("enabled", True)
+    
+    if not gold_enabled:
+        return rescored  # Skip all gold boosting if disabled
+    
     try:
         gold_manager = get_gold_manager()
     except:
@@ -112,25 +125,30 @@ def search_chunks(
     if chunks_embeddings is None or not chunk_texts:
         return [], []
 
-    gold_manager = get_gold_manager()
-    direct_match = gold_manager.find_matching_gold_entry(query, threshold=0.95)
-    if direct_match:
-        gold_id = direct_match.get('id')
-        for idx, meta in enumerate(chunk_meta):
-            if meta.get('gold_id') == gold_id:
-                retrieval_path = [{
-                    "rank": 1,
-                    "idx": idx,
-                    "score": direct_match.get('match_score'),
-                    "title": f"Gold Q&A: {gold_id}",
-                    "url": direct_match.get('url', ''),
-                    "tier": 0,
-                    "tier_name": "gold_set",
-                    "text": chunk_texts[idx] if idx < len(chunk_texts) else "",
-                    "gold_match": True,
-                    "match_score": direct_match.get('match_score')
-                }]
-                return [idx], retrieval_path
+    # Check if gold set is enabled
+    gold_enabled = cfg.get("gold_set", {}).get("enabled", True)
+    
+    # Only attempt direct gold matching if gold set is enabled
+    if gold_enabled:
+        gold_manager = get_gold_manager()
+        direct_match = gold_manager.find_matching_gold_entry(query, threshold=0.95)
+        if direct_match:
+            gold_id = direct_match.get('id')
+            for idx, meta in enumerate(chunk_meta):
+                if meta.get('gold_id') == gold_id:
+                    retrieval_path = [{
+                        "rank": 1,
+                        "idx": idx,
+                        "score": direct_match.get('match_score'),
+                        "title": f"Gold Q&A: {gold_id}",
+                        "url": direct_match.get('url', ''),
+                        "tier": 0,
+                        "tier_name": "gold_set",
+                        "text": chunk_texts[idx] if idx < len(chunk_texts) else "",
+                        "gold_match": True,
+                        "match_score": direct_match.get('match_score')
+                    }]
+                    return [idx], retrieval_path
 
     q_vec = embed_model.encode([query], convert_to_numpy=True)[0]
     chunk_norms = get_chunk_norms()
@@ -152,12 +170,14 @@ def search_chunks(
         base = float(sims[i]) * _tier_boost(meta_i.get("tier", 2))
         rescored.append((i, base))
 
+    # Apply gold boosting only if enabled
     rescored = _apply_gold_boost(rescored, query, chunk_texts, chunk_sources, chunk_meta)
     rescored.sort(key=lambda x: x[1], reverse=True)
     ordered = [i for i, _ in rescored]
 
+    # Ensure gold in results only if gold set is enabled
     gold_cfg = cfg.get("gold_set", {})
-    if gold_cfg.get("ensure_gold_in_results", True):
+    if gold_enabled and gold_cfg.get("ensure_gold_in_results", True):
         top_k = ordered[:k]
         has_gold = any((chunk_meta[i] or {}).get("tier") == 0 for i in top_k if i < len(chunk_meta))
         if not has_gold:

@@ -90,7 +90,7 @@ course_filters:
 
 gold_set:
   # enable/disable gold set features
-  enabled: true
+  enabled: false
   
   # path to gold JSONL file (relative to backend/)
   gold_file_path: "../automation_testing/gold.jsonl"
@@ -100,7 +100,7 @@ gold_set:
   direct_answer_threshold: 0.95  # 95% similarity for direct answers
 
 enhancements:
-  enabled: true  # master switch for all enhancements
+  enabled: false  # master switch for all enhancements
   
   # query Enhancement
   query_enhancement:
@@ -142,7 +142,7 @@ performance:
   cache_size: 128
   max_tokens: 128
   
-  # Boosting settings
+  # boosting settings
   tier_boost: 3.0
   
   gold_chunk_boost: 2.5
