@@ -8,14 +8,16 @@ _CALENDAR_KEYWORDS = {
     "registration deadline", "semester start", "semester end", "term start", "term end",
     "holiday", "break", "vacation", "last day to add", "last day to drop"
 }
+
 def _maybe_calendar_link(message: str):
     q = (message or "").lower()
     if any(k in q for k in _CALENDAR_KEYWORDS):
         return (
-            f"For up-to-date academic dates and deadlines, see the Registrar’s "
-            f"calendars and important deadlines: {_CALENDAR_LINK}"
+            f"For up-to-date academic dates and deadlines, please see the Registrar’s Academic Calendar: "
+            f"{_CALENDAR_LINK}"
         )
     return None
+
 
 from services.intent_service import (
     LEVEL_HINT_TOKEN,
@@ -32,6 +34,7 @@ from services.qa_service import cached_answer_with_path
 from utils.course_utils import detect_course_code, COURSE_CODE_RX
 from utils.program_utils import match_program_alias
 from services.query_transform_service import transform_query
+
 
 def process_question_for_retrieval(
     incoming_message,
@@ -145,7 +148,7 @@ def process_question_for_retrieval(
     if new_alias and isinstance(new_alias, dict):
         alias_url = new_alias.get("url")
 
-<<<<<<< HEAD
+    # --- calendar quick link fallback (before retrieval) ---
     calendar_msg = _maybe_calendar_link(incoming_message)
     if calendar_msg:
         return dict(
@@ -160,11 +163,8 @@ def process_question_for_retrieval(
             course_code=None,
             scoped_message=scoped_message,
         )
- 
+
     # Not using scoped_message, intent_key, or course_norm as they all tank the test answers/scores
-=======
-    # not using scoped_message, intent_key, or course_norm as they all tank the test answers/scores
->>>>>>> main
     answer, sources, retrieval_path, context = cached_answer_with_path(
         user_query, alias_url=alias_url, intent_key=None, course_norm=None
     )
