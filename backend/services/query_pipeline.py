@@ -13,24 +13,25 @@ def process_question_for_retrieval(incoming_message):
         incoming_message: The user's question (string or list of strings)
     
     Returns:
-        dict with keys: answer, sources, retrieval_path, context
+        dict with keys: answer, sources, retrieval_path, context, original_query, transformed_query
     """
     # handle list messages
     if isinstance(incoming_message, list):
         incoming_message = " ".join(incoming_message)
     
-    user_query = incoming_message
-    _transformed = transform_query(user_query)
-    if _transformed != user_query:
-        print(f"[QueryTransform] Original: {user_query} -> Transformed: {_transformed}")
-    user_query = _transformed
+    original_query = incoming_message
+    transformed_query = transform_query(original_query)
+    if transformed_query != original_query:
+        print(f"[QueryTransform] Original: {original_query} -> Transformed: {transformed_query}")
 
     # Simple retrieval without any scoping or intent-based modifications
-    answer, sources, retrieval_path, context = cached_answer_with_path(user_query)
+    answer, sources, retrieval_path, context = cached_answer_with_path(transformed_query)
     return dict(
         answer=answer,
         sources=sources,
         retrieval_path=retrieval_path,
         context=context,
+        original_query=original_query,
+        transformed_query=transformed_query,
     )
 

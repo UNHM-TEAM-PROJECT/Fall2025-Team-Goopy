@@ -76,7 +76,8 @@ async def main():
             fout.write(json.dumps({
                 "id": qid,
                 "model_answer": response.answer,
-                "retrieved_ids": response.retrieval_path
+                "retrieved_ids": response.retrieval_path,
+                "transformed_query": response.transformed_query
             }, ensure_ascii=False) + "\n")
             count += 1
 

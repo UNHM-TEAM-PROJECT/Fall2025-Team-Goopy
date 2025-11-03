@@ -15,7 +15,6 @@ async def answer_question(request: ChatRequest, x_session_id: Optional[str] = He
             status_code=400,
             detail="Please include X-Session-Id header"
         )
-    sess = get_session(x_session_id)
     incoming_message = request.message if not isinstance(request.message, list) else " ".join(request.message)
     
     # Check for generic responses first
@@ -49,7 +48,12 @@ async def answer_question(request: ChatRequest, x_session_id: Optional[str] = He
         pass
     
     log_chat_interaction(incoming_message, answer, result["sources"])
-    return ChatResponse(answer=answer, sources=result["sources"], retrieval_path=result["retrieval_path"])
+    return ChatResponse(
+        answer=answer, 
+        sources=result["sources"], 
+        retrieval_path=result["retrieval_path"],
+        transformed_query=result["transformed_query"]
+    )
 
 @router.post("/reset-session")
 def reset_one_session(x_session_id: Optional[str] = Header(default=None)):

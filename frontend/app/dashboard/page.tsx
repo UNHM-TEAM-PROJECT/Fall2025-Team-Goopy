@@ -1021,6 +1021,15 @@ export default function TestResultsPage() {
                                   <div className="mb-4">
                                     <h3 className="font-semibold text-lg text-gray-800 mb-2">Question:</h3>
                                     <p className="text-gray-700">{pred1.query}</p>
+                                    {pred1.transformed_query && pred1.transformed_query !== pred1.query && (
+                                      <div className="mt-2 bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
+                                        <p className="text-xs font-semibold text-yellow-800 mb-1">Transformed Query:</p>
+                                        <p className="text-sm text-gray-700">{pred1.transformed_query}</p>
+                                      </div>
+                                    )}
+                                    {(!pred1.transformed_query || pred1.transformed_query === pred1.query) && (
+                                      <p className="text-xs text-gray-500 italic mt-2">Query was not transformed</p>
+                                    )}
                                   </div>
 
                                   <div className="grid md:grid-cols-2 gap-6 mb-6">
@@ -1252,6 +1261,15 @@ export default function TestResultsPage() {
                                 <div className="mb-4">
                                   <h3 className="font-semibold text-lg text-gray-800 mb-2">Question:</h3>
                                   <p className="text-gray-700">{pred.query}</p>
+                                  {pred.transformed_query && pred.transformed_query !== pred.query && (
+                                    <div className="mt-2 bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
+                                      <p className="text-xs font-semibold text-yellow-800 mb-1">Transformed Query:</p>
+                                      <p className="text-sm text-gray-700">{pred.transformed_query}</p>
+                                    </div>
+                                  )}
+                                  {(!pred.transformed_query || pred.transformed_query === pred.query) && (
+                                    <p className="text-xs text-gray-500 italic mt-2">Query was not transformed</p>
+                                  )}
                                 </div>
 
                                 <div className="grid md:grid-cols-2 gap-6">
