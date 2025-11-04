@@ -351,3 +351,18 @@ def cached_answer_with_path(message: str) -> Tuple[str, List[str], List[Dict], O
         message,
         use_enhancements=use_enhancements
     )
+
+def process_question_for_retrieval(message: str) -> Dict[str, any]:
+    """
+    Main entry point for processing questions.
+    Returns a dictionary with answer, sources, retrieval_path, and context.
+    """
+    answer, sources, retrieval_path, context = cached_answer_with_path(message)
+    
+    return {
+        "answer": answer,
+        "sources": sources,
+        "retrieval_path": retrieval_path,
+        "context": context,
+        "transformed_query": None  # Not using query transformation in this version
+    }
