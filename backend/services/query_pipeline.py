@@ -1,353 +1,183 @@
-"""
-Simplified pipeline for preprocessing and retrieval logic.
-"""
 import re
-from functools import lru_cache
-from typing import List, Tuple, Dict, Optional
 
-from models.ml_models import get_qa_pipeline
-from services.chunk_service import get_chunks_data
-from services.retrieval_service import search_chunks
-from services.beam_search import generate_with_beam_search
-from text_fragments import build_text_fragment_url, choose_snippet, is_synthetic_label
-from utils.course_utils import extract_course_fallbacks
-from config.settings import get_config
-from services.query_enhancement import OpenSourceQueryEnhancer
-from services.compression_service import OpenSourceCompressor
-from services.reranking_service import OpenSourceReranker
+# simple external-link detector for calendar/deadline queries ===
+_CALENDAR_LINK = "https://www.unh.edu/registrar/registration-resources/calendars-important-deadlines"
+_CALENDAR_KEYWORDS = {
+    "academic calendar", "calendar", "important dates", "important deadlines",
+    "deadlines", "deadline", "add/drop", "add drop", "drop deadline", "withdraw deadline",
+    "registration deadline", "semester start", "semester end", "term start", "term end",
+    "holiday", "break", "vacation", "last day to add", "last day to drop"
+}
 
-# NEW: calendar fallback import
-from services.calendar_fallback import maybe_calendar_fallback
-
-UNKNOWN = "I don't have that information."
-
-# lazy-loaded global service instances
-_enhancer = None
-_compressor = None
-_reranker = None
-
-def get_enhancer():
-    global _enhancer
-    if _enhancer is None:
-        _enhancer = OpenSourceQueryEnhancer()
-    return _enhancer
-
-def get_compressor():
-    global _compressor
-    if _compressor is None:
-        _compressor = OpenSourceCompressor()
-    return _compressor
-
-def get_reranker():
-    global _reranker
-    if _reranker is None:
-        _reranker = OpenSourceReranker()
-    return _reranker
-
-def _extract_best_credits(chunks):
-    for text, meta in chunks:
-        match = re.search(r"(\d{1,3})\s*(credits|credit hours?)", text, re.I)
-        if match:
-            return text, meta, match.group(1)
+def _maybe_calendar_link(message: str):
+    q = (message or "").lower()
+    if any(k in q for k in _CALENDAR_KEYWORDS):
+        return (
+            f"For up-to-date academic dates and deadlines, please see the Registrar’s Academic Calendar: "
+            f"{_CALENDAR_LINK}"
+        )
     return None
 
 
-def _wrap_sources_with_text_fragments(
-    sources_with_passages: List[Tuple[str, Dict]],
-    question: str
-) -> List[Tuple[str, Dict]]:
-    wrapped = []
-    for passage, src in sources_with_passages:
-        url = src.get("url", "")
-        if not url or is_synthetic_label(passage):
-            wrapped.append((passage, {**src, "url": url}))
-            continue
-        
-        snippet = choose_snippet(passage, hint=question, max_chars=160)
-        wrapped.append((passage, {
-            **src,
-            "url": build_text_fragment_url(url, text=snippet) if snippet else url
-        }))
-    return wrapped
+from services.intent_service import (
+    LEVEL_HINT_TOKEN,
+    INTENT_TEMPLATES,
+    detect_intent,
+    detect_program_level,
+    detect_correction_or_negation,
+    alias_conflicts_with_level,
+    looks_like_followup,
+    explicit_program_mention,
+    auto_intent_from_topic
+)
+from services.qa_service import cached_answer_with_path
+from utils.course_utils import detect_course_code, COURSE_CODE_RX
+from utils.program_utils import match_program_alias
+from services.query_transform_service import transform_query
 
-def get_prompt(question: str, context: str) -> str:
-    return (
-        "You must answer in EXACTLY 1-2 short sentences. No more.\n"
-        "Answer ONLY the specific question asked. Do not add extra information.\n"
-        "Do NOT mention courses, petitions, or procedures unless directly asked.\n"
-        "Do NOT include source markers like [Source 1].\n"
-        f"If you cannot answer, say: {UNKNOWN}\n\n"
-        f"Context:\n{context}\n\n"
-        f"Question: {question}\n\n"
-        f"Answer (1-2 sentences only):"
+
+def process_question_for_retrieval(
+    incoming_message,
+    session=None,
+    prev_intent=None,
+    prev_program_level=None,
+    prev_program_alias=None,
+    prev_course_code=None,
+    prev_last_question=None,
+    prev_last_answer=None,
+    prev_last_retrieval_path=None
+):
+    # session or a fake session
+    sess = session or {}
+    sess.setdefault("intent", prev_intent)
+    sess.setdefault("program_level", prev_program_level)
+    sess.setdefault("program_alias", prev_program_alias)
+    sess.setdefault("course_code", prev_course_code)
+    sess.setdefault("last_question", prev_last_question)
+    sess.setdefault("last_answer", prev_last_answer)
+    sess.setdefault("last_retrieval_path", prev_last_retrieval_path)
+
+    # handle list messages
+    if isinstance(incoming_message, list):
+        incoming_message = " ".join(incoming_message)
+
+    # Apply query transformation before intent detection and retrieval
+    user_query = incoming_message
+    _transformed = transform_query(user_query)
+    if _transformed != user_query:
+        print(f"[QueryTransform] Original: {user_query} -> Transformed: {_transformed}")
+    user_query = _transformed
+
+    # update session context
+    new_intent = detect_intent(user_query, prev_intent=sess.get("intent"))
+    new_level = detect_program_level(
+        user_query,
+        fallback=sess.get("program_level") or "unknown"
+    )
+    match = match_program_alias(user_query)
+    new_alias = match or sess.get("program_alias")
+
+    corr = detect_correction_or_negation(user_query)
+    if corr.get("negated_level"):
+        neg = corr["negated_level"]
+        if sess.get("program_level") == neg:
+            new_level = "unknown"
+            new_alias = None
+    if corr.get("new_level"):
+        new_level = corr["new_level"]
+    if any(corr.values()):
+        if sess.get("last_question"):
+            user_query = sess.get("last_question")
+
+    try:
+        if new_alias and isinstance(new_alias, dict) and new_level and new_level != "unknown":
+            if alias_conflicts_with_level(new_alias, new_level):
+                level_hint = LEVEL_HINT_TOKEN.get(new_level, "")
+                hinted_message = user_query + (f" {level_hint}" if level_hint else "")
+                rematch = match_program_alias(hinted_message)
+                new_alias = rematch if rematch else None
+    except Exception:
+        pass
+
+    if isinstance(new_alias, dict) and new_alias.get("title"):
+        new_alias = {
+            "title": (new_alias["title"].split(" - ")[0] or new_alias["title"]).strip(),
+            "url": new_alias.get("url", ""),
+        }
+
+    is_followup = looks_like_followup(user_query) or any(corr.values())
+    base_topic = user_query
+    if is_followup and sess.get("last_question"):
+        base_topic = sess.get("last_question")
+
+    try:
+        explicit_prog = explicit_program_mention(user_query)
+
+        if is_followup and sess.get("program_alias") and not explicit_prog:
+            new_alias = sess.get("program_alias")
+        elif match:
+            new_alias = match
+        else:
+            new_alias = sess.get("program_alias") if explicit_prog else None
+    except Exception:
+        pass
+
+    if not new_intent:
+        inferred = auto_intent_from_topic(base_topic)
+        if inferred:
+            new_intent = inferred
+        elif sess.get("intent"):
+            new_intent = sess.get("intent")
+
+    detected_course = detect_course_code(base_topic)
+    if not detected_course and (sess.get("intent") == "course_info"):
+        if re.search(r"\bwhat about\b", user_query, re.I) or COURSE_CODE_RX.search(user_query.upper()):
+            detected_course = detect_course_code(user_query)
+
+    # session updates
+    session_updates = dict(
+        intent=new_intent,
+        program_level=new_level,
+        program_alias=new_alias,
+        course_code=detected_course,
+        last_question=base_topic,
     )
 
-def _clean_answer(answer: str) -> str:
-    """
-    Post-process the model answer to remove junk and enforce length limits.
-    """
-    if not answer or answer.strip() == UNKNOWN:
-        return answer
-    
-    # Remove source markers like [Source 1], [Source 2], etc.
-    answer = re.sub(r'\[Source \d+\]', '', answer)
-    answer = re.sub(r'\bSource \d+\b', '', answer)
-    
-    # Split into sentences
-    sentences = re.split(r'(?<=[.!?])\s+', answer.strip())
-    
-    # Keep only first 2-3 sentences
-    if len(sentences) > 3:
-        answer = ' '.join(sentences[:3])
-    
-    # If still too long (>400 chars), truncate at sentence boundary
-    if len(answer) > 400:
-        sentences = re.split(r'(?<=[.!?])\s+', answer)
-        answer = sentences[0]
-        if len(sentences) > 1 and len(answer + ' ' + sentences[1]) <= 400:
-            answer = answer + ' ' + sentences[1]
-    
-    return answer.strip()
+    scoped_message = base_topic
+    alias_url = None
+    if new_alias and isinstance(new_alias, dict):
+        alias_url = new_alias.get("url")
 
-# Simple fallbacks without intent detection
-def _apply_fallbacks(answer, question, top_chunks):
-    def _looks_idk(a: str) -> bool:
-        return (a or "").strip() == UNKNOWN
-    # degree credits fallback
-    qn_lower = (question or "").lower()
-    if any(tok in qn_lower for tok in ["credits required", "how many credits", "total credits", "credit requirement"]):
-        hit = _extract_best_credits(top_chunks)
-        if hit:
-            _, _, num = hit
-            if _looks_idk(answer) or not re.search(r"\b\d{1,3}\b", answer):
-                answer = f"{num}."
-    # course fallbacks (simple pattern matching)
-    if re.search(r"\b[A-Z]{2,4}\s*\d{3,4}\b", question):
-        cf = extract_course_fallbacks(top_chunks)
-        need_help = _looks_idk(answer) or \
-                   (not re.search(r"credits|prereq|grade", answer, re.I))
-        if need_help and any(cf.values()):
-            parts = []
-            if cf["credits"]:
-                parts.append(f"Credits: {cf['credits']}")
-            if cf["prereqs"]:
-                parts.append(f"Prerequisite(s): {cf['prereqs']}")
-            if cf["grademode"]:
-                parts.append(f"Grade Mode: {cf['grademode']}")
-            if parts:
-                answer = ". ".join(parts) + "."
-    return answer
-
-def _answer_question(question: str, use_enhancements: bool = True) -> Tuple[str, List[str], List[Dict]]:
-    qa_pipeline = get_qa_pipeline()
-    cfg = get_config()
-
-    if use_enhancements:
-        enhancer = get_enhancer()
-        enhanced = enhancer.enhance_query(question, query_type='general')
-        question = enhanced["rewritten"]
-        print(f"Enhanced query: {question}")
-
-    _, chunk_texts, chunk_sources, _ = get_chunks_data()
-    topn_cfg = cfg.get("search", {})
-    topn = int(topn_cfg.get("topn_default", 40))
-    k_final = int(cfg.get("k", 5))
-    retrieval_k = min(topn, 20) if use_enhancements else k_final
-    idxs, retrieval_path = search_chunks(
-        question,
-        topn=topn,
-        k=retrieval_k)
-
-    if not idxs:
-        # Apply internal fallbacks first
-        answer = _apply_fallbacks(UNKNOWN, question, [])
-
-        # Calendar fallback (no sources available in this branch)
-        cal_fb = maybe_calendar_fallback(question, answer, [])
-        if cal_fb:
-            return cal_fb, [], [], None
-
-        return answer, [], [], None
-    
-    # log if gold chunk was retrieved
-    has_gold = any(entry.get("is_gold", False) for entry in retrieval_path)
-    if has_gold:
-        gold_entries = [e for e in retrieval_path if e.get("is_gold")]
-        print(f"Gold chunks in results: {len(gold_entries)}")
-        for entry in gold_entries[:2]:
-            print(f"  - Rank {entry.get('rank')}: {entry.get('gold_id', 'unknown')}")
-
-    if use_enhancements and len(idxs) > k_final:
-        reranker = get_reranker()
-        chunks_for_rerank = [(chunk_texts[i], chunk_sources[i]) for i in idxs]
-        semantic_scores = [p.get("score", 0.5) for p in retrieval_path if p.get("idx") in idxs]
-
-        reranked_indices = reranker.rerank(
-            question,
-            chunks_for_rerank,
-            semantic_scores,
-            use_cross_encoder=True,
-            use_tfidf=True,
-            top_k=k_final * 2
+    # --- calendar quick link fallback (before retrieval) ---
+    calendar_msg = _maybe_calendar_link(incoming_message)
+    if calendar_msg:
+        return dict(
+            answer=calendar_msg,
+            sources=[],
+            retrieval_path=[],
+            session_updates=session_updates,
+            context=None,
+            intent=None,
+            program_level=new_level,
+            program_alias=new_alias,
+            course_code=None,
+            scoped_message=scoped_message,
         )
 
-        final_indices = reranker.diversity_filter(
-            chunks_for_rerank,
-            reranked_indices,
-            diversity_threshold=0.7
-        )[:k_final]
+    # Not using scoped_message, intent_key, or course_norm as they all tank the test answers/scores
+    answer, sources, retrieval_path, context = cached_answer_with_path(
+        user_query, alias_url=alias_url, intent_key=None, course_norm=None
+    )
 
-        idxs = [idxs[i] for i in final_indices]
-        for new_rank, idx in enumerate(idxs, 1):
-            for path_entry in retrieval_path:
-                if path_entry.get("idx") == idx:
-                    path_entry["rank"] = new_rank
-                    path_entry["reranked"] = True
-    
-    top_chunks = [(chunk_texts[i], chunk_sources[i]) for i in idxs]
-    if use_enhancements:
-        compressor = get_compressor()
-        top_chunks = compressor.deduplicate_content(top_chunks)
-        top_chunks = compressor.compress_chunks(
-            question, top_chunks, max_chunks=k_final, aggressive=False
-        )
-    top_chunks, context = build_context_string(top_chunks)
-
-    prompt = get_prompt(question, context)
-    beam_cfg = cfg.get("beam_search", {})
-    use_beam = beam_cfg.get("enabled", True)
-    max_tokens = int(cfg.get("performance", {}).get("max_tokens", 200))
-    qa_pipeline = get_qa_pipeline()
-    
-    if use_beam:
-        answer = generate_with_beam_search(qa_pipeline, prompt, question, context)
-        if answer is None:
-            # Beam search failed, use deterministic fallback
-            result = qa_pipeline(
-                prompt,
-                max_new_tokens=max_tokens,
-                temperature=0.1,  # Low temperature for consistency
-                top_p=0.9,
-                repetition_penalty=1.2,
-                no_repeat_ngram_size=3,
-                do_sample=True  # Minimal sampling for slight variation
-            )
-            answer = result[0]["generated_text"].strip()
-    else:
-        # Beam search disabled, use low-temperature generation for consistency
-        result = qa_pipeline(
-            prompt,
-            max_new_tokens=max_tokens,
-            temperature=0.1,  # Very low temperature - more deterministic
-            top_p=0.9,
-            repetition_penalty=1.2,
-            no_repeat_ngram_size=3,
-            do_sample=True
-        )
-        answer = result[0]["generated_text"].strip()
-
-    # Clean up the answer (remove source markers, limit length)
-    answer = _clean_answer(answer)
-    
-    # Apply internal fallbacks
-    answer = _apply_fallbacks(answer, question, top_chunks)
-
-    # Collect readable titles for calendar-fallback signal
-    try:
-        source_titles = [src.get("title") or src.get("name") or "" for _, src in top_chunks if isinstance(src, dict)]
-    except Exception:
-        source_titles = []
-
-    # Calendar fallback last (only when the model didn't provide a concrete deadline/term date)
-    cal_fb = maybe_calendar_fallback(question, answer, source_titles)
-    if cal_fb:
-        # No citations for a pure calendar link response
-        return cal_fb, [], retrieval_path, context
-
-    # Build citations
-    citation_lines = build_citations(question, top_chunks, retrieval_path)
-
-    return answer, citation_lines, retrieval_path, context
-
-def build_context_string(top_chunks: List[Tuple[str, Dict]]) -> Tuple[List[Tuple[str, Dict]], str]:
-    """
-    Build context with better structure to help LLM extract key information.
-    For Q&A chunks, extract only the Answer portion to reduce verbosity.
-    """
-    parts = []
-    
-    # Sort chunks: synthetic Q&A first, then by relevance
-    sorted_chunks = []
-    qa_chunks = []
-    regular_chunks = []
-    
-    for text, source in top_chunks:
-        if "Question:" in text and "Answer:" in text:
-            qa_chunks.append((text, source))
-        else:
-            regular_chunks.append((text, source))
-    
-    # Q&A format chunks first (they're more direct)
-    sorted_chunks = qa_chunks + regular_chunks
-    
-    for i, (text, source) in enumerate(sorted_chunks, 1):
-        title = source.get("title", "Source")
-        title = title.split(" - ")[-1] if " - " in title else title
-        
-        # For Q&A chunks, extract only the answer to reduce context bloat
-        display_text = text
-        if "Question:" in text and "Answer:" in text:
-            # Split on "Answer:" and take everything after it
-            answer_parts = text.split("Answer:", 1)
-            if len(answer_parts) == 2:
-                display_text = answer_parts[1].strip()
-        
-        parts.append(f"[Source {i}] {title}\n{display_text}")
-    
-    return sorted_chunks, "\n\n".join(parts)
-
-def build_citations(question, chunks: List[Tuple[str, Dict]], retrieval_path: List[Dict]) -> List[str]:
-    enriched_sources = _wrap_sources_with_text_fragments(chunks, question)
-    enriched_all = enriched_sources + chunks[3:]
-
-    seen = set()
-    citation_lines = []
-
-    for i, (_, src) in enumerate(enriched_all):
-        key = (src.get("title"), src.get("url"))
-        if key in seen:
-            continue
-        seen.add(key)
-
-        # check if gold-boosted
-        is_gold = False
-        if i < len(retrieval_path):
-            path_entry = retrieval_path[i]
-            is_gold = path_entry.get("is_gold", False)
-
-        # clean title — remove "Gold Q&A:" or any ID suffix
-        title = src.get("title", "Source")
-        title = re.sub(r"^Gold Q&A:\s*", "", title)
-        title = re.sub(r"[:\-]\s*q\d+$", "", title)
-        title = title.strip()
-
-        # build the line
-        prefix = "- " if is_gold else "- "
-        line = f"{prefix}{title}"
-
-        # add link if present
-        if src.get("url"):
-            line += f" ({src['url']})"
-
-        citation_lines.append(line)
-
-    return citation_lines
-
-@lru_cache(maxsize=128)
-def cached_answer_with_path(message: str) -> Tuple[str, List[str], List[Dict], Optional[str]]:
-    cfg = get_config()
-    use_enhancements = cfg.get("enhancements", {}).get("enabled", True)
-    return _answer_question(
-        message,
-        use_enhancements=use_enhancements
+    return dict(
+        answer=answer,
+        sources=sources,
+        retrieval_path=retrieval_path,
+        session_updates=session_updates,
+        context=context,
+        intent=None,
+        program_level=new_level,
+        program_alias=new_alias,
+        course_code=None,
+        scoped_message=scoped_message,
     )

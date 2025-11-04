@@ -91,7 +91,7 @@ class Evaluator:
         model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
     ) -> None:
         self.thresh = thresh
-        self.model = SentenceTransformer(model_name, device='cpu')
+        self.model = SentenceTransformer(model_name)
 
     # --- Answer-to-reference metrics ---
     def sbert_cosine(self, a: str, b: str) -> float:
@@ -120,7 +120,6 @@ class Evaluator:
             lang="en",
             rescale_with_baseline=True,
             verbose=False,
-            device='cpu',
         )
         return float(f1[0].item())
 
@@ -202,28 +201,25 @@ if __name__ == "__main__":
     if output_dir is not None:
         preds_path = output_dir / "preds.jsonl"
         report_path = output_dir / "report.json"
-        gold_path = output_dir / "gold.jsonl"
         if not preds_path.exists():
             raise SystemExit(f"Could not find predictions file: {preds_path}\n"
                              f"Run run_tests.py first, or pass --output-dir to evaluator.py.")
-        if not gold_path.exists():
-            raise SystemExit(f"Gold file not found in output directory: {gold_path}")
         print(f"Using run directory: {output_dir}")
     else:
         preds_path = PREDS
         report_path = REPORT
-        gold_path = GOLD
         if not preds_path.exists():
             raise SystemExit(
                 f"Could not find {preds_path}. "
                 f"Run run_tests.py or pass --output-dir pointing to automation_testing/reports/<timestamp>."
             )
-        if not gold_path.exists():
-            raise SystemExit(f"Gold file not found: {gold_path}")
         print(f"Using flat files next to evaluator: {preds_path}")
 
+    if not GOLD.exists():
+        raise SystemExit(f"Gold file not found: {GOLD}")
+
     # Load gold and predictions keyed by id
-    gold: Dict[str, Dict] = {r["id"]: r for r in read_jsonl(gold_path)}
+    gold: Dict[str, Dict] = {r["id"]: r for r in read_jsonl(GOLD)}
     preds: Dict[str, Dict] = {r["id"]: r for r in read_jsonl(preds_path)}
 
     ev = Evaluator()
