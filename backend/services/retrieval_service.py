@@ -7,7 +7,7 @@ from models.ml_models import get_embed_model
 from services.chunk_service import get_chunks_data, get_chunk_norms
 from services.gold_set_service import get_gold_manager
 
-def _tier_boost(tier: int) -> float:
+def _tier_boost(tier: int, query: str = "") -> float:
     cfg = get_config()
     
     # If gold set is disabled, treat Tier 0 chunks as Tier 2 (general info)
@@ -18,7 +18,16 @@ def _tier_boost(tier: int) -> float:
         else:
             return float(cfg.get("gold_set", {}).get("tier_boost", 3.0))
     
-    return float(cfg.get("tier_boosts", {}).get(tier, 1.0))
+    base_boost = float(cfg.get("tier_boosts", {}).get(tier, 1.0))
+    
+    # Extra boost for Tier 1 (academic regs) if query contains policy terms
+    if tier == 1 and query:
+        policy_terms = get_policy_terms()
+        query_lower = query.lower()
+        if any(term in query_lower for term in policy_terms):
+            base_boost *= 1.3  # 30% additional boost for policy questions
+    
+    return base_boost
 def _is_acad_reg_url(url: str) -> bool:
     return isinstance(url, str) and "/graduate/academic-regulations-degree-requirements/" in url
 
@@ -107,7 +116,6 @@ def search_chunks(
     """
 
     cfg = get_config()
-    policy_terms = get_policy_terms()
     embed_model = get_embed_model()
     chunks_embeddings, chunk_texts, chunk_sources, chunk_meta = get_chunks_data()
 
@@ -156,7 +164,13 @@ def search_chunks(
     rescored = []
     for i in filtered:
         meta_i = chunk_meta[i] if i < len(chunk_meta) else {}
-        base = float(sims[i]) * _tier_boost(meta_i.get("tier", 2))
+        base = float(sims[i]) * _tier_boost(meta_i.get("tier", 2), query)
+        
+        # Boost synthetic Q&A chunks - they match user queries better
+        if meta_i.get("is_synthetic_qa", False):
+            synthetic_boost = cfg.get("synthetic_qa", {}).get("boost_synthetic_qa", 1.3)
+            base *= synthetic_boost
+        
         rescored.append((i, base))
 
     # Apply gold boosting only if enabled

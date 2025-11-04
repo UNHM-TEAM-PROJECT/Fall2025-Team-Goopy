@@ -67,14 +67,42 @@ def _wrap_sources_with_text_fragments(
 
 def get_prompt(question: str, context: str) -> str:
     return (
-        "Using ONLY the provided context, write a concise explanation in exactly 2–3 complete sentences.\n"
-        "Mention requirements, deadlines, or procedures if they are present.\n"
-        f"If the context is insufficient, output exactly: {UNKNOWN}\n"
-        "Do not include assumptions, examples, or general knowledge beyond the context.\n\n"
-        f"Context: {context}\n\n"
+        "You must answer in EXACTLY 1-2 short sentences. No more.\n"
+        "Answer ONLY the specific question asked. Do not add extra information.\n"
+        "Do NOT mention courses, petitions, or procedures unless directly asked.\n"
+        "Do NOT include source markers like [Source 1].\n"
+        f"If you cannot answer, say: {UNKNOWN}\n\n"
+        f"Context:\n{context}\n\n"
         f"Question: {question}\n\n"
-        f"Detailed explanation:"
+        f"Answer (1-2 sentences only):"
     )
+
+def _clean_answer(answer: str) -> str:
+    """
+    Post-process the model answer to remove junk and enforce length limits.
+    """
+    if not answer or answer.strip() == UNKNOWN:
+        return answer
+    
+    # Remove source markers like [Source 1], [Source 2], etc.
+    answer = re.sub(r'\[Source \d+\]', '', answer)
+    answer = re.sub(r'\bSource \d+\b', '', answer)
+    
+    # Split into sentences
+    sentences = re.split(r'(?<=[.!?])\s+', answer.strip())
+    
+    # Keep only first 2-3 sentences
+    if len(sentences) > 3:
+        answer = ' '.join(sentences[:3])
+    
+    # If still too long (>400 chars), truncate at sentence boundary
+    if len(answer) > 400:
+        sentences = re.split(r'(?<=[.!?])\s+', answer)
+        answer = sentences[0]
+        if len(sentences) > 1 and len(answer + ' ' + sentences[1]) <= 400:
+            answer = answer + ' ' + sentences[1]
+    
+    return answer.strip()
 
 # Simple fallbacks without intent detection
 def _apply_fallbacks(answer, question, top_chunks):
@@ -176,28 +204,39 @@ def _answer_question(question: str, use_enhancements: bool = True) -> Tuple[str,
     prompt = get_prompt(question, context)
     beam_cfg = cfg.get("beam_search", {})
     use_beam = beam_cfg.get("enabled", True)
+    max_tokens = int(cfg.get("performance", {}).get("max_tokens", 200))
     qa_pipeline = get_qa_pipeline()
+    
     if use_beam:
         answer = generate_with_beam_search(qa_pipeline, prompt, question, context)
         if answer is None:
-            # Beam search failed, use fallback
+            # Beam search failed, use deterministic fallback
             result = qa_pipeline(
                 prompt,
-                max_new_tokens=128,
+                max_new_tokens=max_tokens,
+                temperature=0.1,  # Low temperature for consistency
+                top_p=0.9,
                 repetition_penalty=1.2,
-                no_repeat_ngram_size=2,
+                no_repeat_ngram_size=3,
+                do_sample=True  # Minimal sampling for slight variation
             )
             answer = result[0]["generated_text"].strip()
     else:
-        # Beam search disabled, use single generation
+        # Beam search disabled, use low-temperature generation for consistency
         result = qa_pipeline(
             prompt,
-            max_new_tokens=128,
+            max_new_tokens=max_tokens,
+            temperature=0.1,  # Very low temperature - more deterministic
+            top_p=0.9,
             repetition_penalty=1.2,
-            no_repeat_ngram_size=2,
+            no_repeat_ngram_size=3,
+            do_sample=True
         )
         answer = result[0]["generated_text"].strip()
 
+    # Clean up the answer (remove source markers, limit length)
+    answer = _clean_answer(answer)
+    
     # apply fallbacks
     answer = _apply_fallbacks(answer, question, top_chunks)
     # build sources
@@ -206,12 +245,41 @@ def _answer_question(question: str, use_enhancements: bool = True) -> Tuple[str,
     return answer, citation_lines, retrieval_path, context
 
 def build_context_string(top_chunks: List[Tuple[str, Dict]]) -> Tuple[List[Tuple[str, Dict]], str]:
+    """
+    Build context with better structure to help LLM extract key information.
+    For Q&A chunks, extract only the Answer portion to reduce verbosity.
+    """
     parts = []
+    
+    # Sort chunks: synthetic Q&A first, then by relevance
+    sorted_chunks = []
+    qa_chunks = []
+    regular_chunks = []
+    
     for text, source in top_chunks:
+        if "Question:" in text and "Answer:" in text:
+            qa_chunks.append((text, source))
+        else:
+            regular_chunks.append((text, source))
+    
+    # Q&A format chunks first (they're more direct)
+    sorted_chunks = qa_chunks + regular_chunks
+    
+    for i, (text, source) in enumerate(sorted_chunks, 1):
         title = source.get("title", "Source")
         title = title.split(" - ")[-1] if " - " in title else title
-        parts.append(f"{title}: {text}")
-    return top_chunks, "\n\n".join(parts)
+        
+        # For Q&A chunks, extract only the answer to reduce context bloat
+        display_text = text
+        if "Question:" in text and "Answer:" in text:
+            # Split on "Answer:" and take everything after it
+            answer_parts = text.split("Answer:", 1)
+            if len(answer_parts) == 2:
+                display_text = answer_parts[1].strip()
+        
+        parts.append(f"[Source {i}] {title}\n{display_text}")
+    
+    return sorted_chunks, "\n\n".join(parts)
 
 def build_citations(question, chunks: List[Tuple[str, Dict]], retrieval_path: List[Dict]) -> List[str]:
     enriched_sources = _wrap_sources_with_text_fragments(chunks, question)

@@ -286,6 +286,45 @@ def load_initial_data() -> None:
         filenames = ["unh_catalog.json"]
         for name in filenames:
             load_catalog(DATA_DIR / name)
+        
+        # Generate synthetic Q&A pairs from catalog chunks BEFORE saving cache
+        cfg = get_config()
+        if cfg.get("synthetic_qa", {}).get("enabled", True):
+            print("\n=== Generating Synthetic Q&A Pairs ===")
+            from services.synthetic_qa_service import get_qa_generator
+            qa_gen = get_qa_generator()
+            
+            # Create Q&A versions of existing chunks
+            original_chunks = list(zip(chunk_texts, chunk_meta))
+            augmented = qa_gen.augment_chunks_with_qa(
+                [(text, meta) for text, meta in zip(chunk_texts, chunk_meta)]
+            )
+            
+            # Extract the NEW synthetic chunks (skip originals)
+            synthetic_chunks = augmented[len(original_chunks):]
+            
+            if synthetic_chunks:
+                embed_model = get_embed_model()
+                new_texts = [text for text, _ in synthetic_chunks]
+                new_meta = [meta for _, meta in synthetic_chunks]
+                new_sources = [chunk_sources[i % len(chunk_sources)] for i in range(len(synthetic_chunks))]
+                
+                # Embed synthetic chunks
+                new_embeds = embed_model.encode(new_texts, convert_to_numpy=True)
+                
+                # Add to index
+                chunk_texts.extend(new_texts)
+                chunk_meta.extend(new_meta)
+                chunk_sources.extend(new_sources)
+                
+                if chunks_embeddings is None:
+                    chunks_embeddings = new_embeds
+                else:
+                    chunks_embeddings = np.vstack([chunks_embeddings, new_embeds])
+                
+                CHUNK_NORMS = np.linalg.norm(chunks_embeddings, axis=1)
+                print(f"Added {len(synthetic_chunks)} synthetic Q&A chunks to index")
+        
         save_chunks_cache()
 
     # initialize gold set manager

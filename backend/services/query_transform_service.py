@@ -170,7 +170,6 @@ def llm_rewrite(query: str) -> str:
         "Rules:\n"
         "- Clarify vague nouns (e.g., 'failing' -> 'failing grade').\n"
         "- Do NOT change the meaning of the question.\n"
-        "- Do NOT confuse 'graduation' (completing a degree) with 'graduate admission' (applying to a program).\n"
         "- Do NOT invent facts, numbers, or policies.\n"
         "- Preserve all course codes and entities.\n"
         "- Keep it to a single concise question.\n\n"
@@ -209,20 +208,6 @@ def llm_rewrite(query: str) -> str:
         KEY_TOKENS = [t for t in KEY_TOKENS if t not in STOP]
         if KEY_TOKENS and not any(t in (rewritten or "").lower() for t in KEY_TOKENS):
             return query
-
-        # Specific semantic guards to catch common LLM mistakes
-        query_lower = query.lower()
-        rewritten_lower = rewritten.lower()
-        
-        # Don't let "graduation" turn into "graduate admission/degrees"
-        if "graduation" in query_lower and "graduation" not in rewritten_lower:
-            if any(term in rewritten_lower for term in ["graduate degree", "graduate program", "admission"]):
-                return query
-        
-        # Don't let "transfer" turn into something about "credit transfer policy" when asking about transferring programs
-        if "transfer" in query_lower and "credit" not in query_lower:
-            if "transfer credit" in rewritten_lower and "program" in query_lower:
-                return query
 
         # Semantic sanity check: reject noisy/irrelevant rewrites
         if not _semantic_sanity(query, rewritten):
