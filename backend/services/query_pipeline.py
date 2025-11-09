@@ -148,21 +148,6 @@ def process_question_for_retrieval(
     if new_alias and isinstance(new_alias, dict):
         alias_url = new_alias.get("url")
 
-    # --- calendar quick link fallback (before retrieval) ---
-    calendar_msg = _maybe_calendar_link(incoming_message)
-    if calendar_msg:
-        return dict(
-            answer=calendar_msg,
-            sources=[],
-            retrieval_path=[],
-            session_updates=session_updates,
-            context=None,
-            intent=None,
-            program_level=new_level,
-            program_alias=new_alias,
-            course_code=None,
-            scoped_message=scoped_message,
-        )
 
     # Not using scoped_message, intent_key, or course_norm as they all tank the test answers/scores
     answer, sources, retrieval_path, context = cached_answer_with_path(
