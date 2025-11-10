@@ -1,4 +1,27 @@
+"""
+Simplified pipeline for preprocessing and retrieval logic.
+"""
 import re
+
+# simple external-link detector for calendar/deadline queries ===
+_CALENDAR_LINK = "https://www.unh.edu/registrar/registration-resources/calendars-important-deadlines"
+_CALENDAR_KEYWORDS = {
+    "academic calendar", "calendar", "important dates", "important deadlines",
+    "deadlines", "deadline", "add/drop", "add drop", "drop deadline", "withdraw deadline",
+    "registration deadline", "semester start", "semester end", "term start", "term end",
+    "holiday", "break", "vacation", "last day to add", "last day to drop"
+}
+
+def _maybe_calendar_link(message: str):
+    q = (message or "").lower()
+    if any(k in q for k in _CALENDAR_KEYWORDS):
+        return (
+            f"For up-to-date academic dates and deadlines, please see the Registrar’s Academic Calendar: "
+            f"{_CALENDAR_LINK}"
+        )
+    return None
+
+
 from services.intent_service import (
     LEVEL_HINT_TOKEN,
     INTENT_TEMPLATES,
@@ -14,6 +37,7 @@ from services.qa_service import cached_answer_with_path
 from utils.course_utils import detect_course_code, COURSE_CODE_RX
 from utils.program_utils import match_program_alias
 from services.query_transform_service import transform_query
+
 
 def process_question_for_retrieval(
     incoming_message,
@@ -76,26 +100,34 @@ def process_question_for_retrieval(
                 rematch = match_program_alias(hinted_message)
                 new_alias = rematch if rematch else None
     except Exception:
-        pass
+        source_titles = []
 
-    if isinstance(new_alias, dict) and new_alias.get("title"):
-        new_alias = {
-            "title": (new_alias["title"].split(" - ")[0] or new_alias["title"]).strip(),
-            "url": new_alias.get("url", ""),
-        }
+    # Calendar fallback last (only when the model didn't provide a concrete deadline/term date)
+    cal_fb = maybe_calendar_fallback(question, answer, source_titles)
+    if cal_fb:
+        # No citations for a pure calendar link response
+        return cal_fb, [], retrieval_path, context
 
-    is_followup = looks_like_followup(user_query) or any(corr.values())
-    base_topic = user_query
-    if is_followup and sess.get("last_question"):
-        base_topic = sess.get("last_question")
+    # Build citations
+    citation_lines = build_citations(question, top_chunks, retrieval_path)
 
-    try:
-        explicit_prog = explicit_program_mention(user_query)
+    return answer, citation_lines, retrieval_path, context
 
-        if is_followup and sess.get("program_alias") and not explicit_prog:
-            new_alias = sess.get("program_alias")
-        elif match:
-            new_alias = match
+def build_context_string(top_chunks: List[Tuple[str, Dict]]) -> Tuple[List[Tuple[str, Dict]], str]:
+    """
+    Build context with better structure to help LLM extract key information.
+    For Q&A chunks, extract only the Answer portion to reduce verbosity.
+    """
+    parts = []
+    
+    # Sort chunks: synthetic Q&A first, then by relevance
+    sorted_chunks = []
+    qa_chunks = []
+    regular_chunks = []
+    
+    for text, source in top_chunks:
+        if "Question:" in text and "Answer:" in text:
+            qa_chunks.append((text, source))
         else:
             new_alias = sess.get("program_alias") if explicit_prog else None
     except Exception:
@@ -127,7 +159,23 @@ def process_question_for_retrieval(
     if new_alias and isinstance(new_alias, dict):
         alias_url = new_alias.get("url")
 
-    # not using scoped_message, intent_key, or course_norm as they all tank the test answers/scores
+    # --- calendar quick link fallback (before retrieval) ---
+    calendar_msg = _maybe_calendar_link(incoming_message)
+    if calendar_msg:
+        return dict(
+            answer=calendar_msg,
+            sources=[],
+            retrieval_path=[],
+            session_updates=session_updates,
+            context=None,
+            intent=None,
+            program_level=new_level,
+            program_alias=new_alias,
+            course_code=None,
+            scoped_message=scoped_message,
+        )
+
+    # Not using scoped_message, intent_key, or course_norm as they all tank the test answers/scores
     answer, sources, retrieval_path, context = cached_answer_with_path(
         user_query, alias_url=alias_url, intent_key=None, course_norm=None
     )
