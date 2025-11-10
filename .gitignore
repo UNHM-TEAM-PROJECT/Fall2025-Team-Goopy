@@ -13,3 +13,12 @@ __pycache__/
 /.model_cache/
 
 **/__pycache__/
+
+# Ignore generated artifacts
+automation_testing/reports/
+scraper/chunks_cache.pkl
+backend/data/synthetic_qa_generated.jsonl
+automation_testing/chat_logs.csv
+backend/chat_logs.csv
+scraper/unh_catalog.json
+*.pkl
