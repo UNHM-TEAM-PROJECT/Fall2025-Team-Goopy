@@ -9,4 +9,3 @@ class ChatResponse(BaseModel):
     answer: str
     sources: List[str]
     retrieval_path: List[Dict[str, Any]]
-    transformed_query: Optional[str] = None
