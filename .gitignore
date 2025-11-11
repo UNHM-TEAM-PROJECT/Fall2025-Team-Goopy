@@ -13,3 +13,7 @@ __pycache__/
 /.model_cache/
 
 **/__pycache__/
+
+# test artifacts
+automation_testing/reports/
+backend/data/synthetic_qa_generated.jsonl
