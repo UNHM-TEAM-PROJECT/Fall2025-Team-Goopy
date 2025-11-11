@@ -3,6 +3,11 @@ from .chunk_service import (
     get_chunks_data,
     get_tier_counts,
 )
+from .intent_service import (
+    detect_intent,
+    detect_program_level,
+    get_intent_template,
+)
 from .qa_service import cached_answer_with_path
 from .retrieval_service import search_chunks
 from .session_service import (

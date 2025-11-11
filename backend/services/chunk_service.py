@@ -1,13 +1,12 @@
 import json
 import pickle
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 import numpy as np
 from hierarchy import compute_tier
 from models.ml_models import get_embed_model
 from utils.program_utils import build_program_index
-from config.settings import get_config
-from services.gold_set_service import initialize_gold_set
+from services.gold_set_service import get_gold_manager, initialize_gold_set  # NEW IMPORTS
 
 # paths
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -26,7 +25,12 @@ def _compute_meta_from_source(src: Dict[str, Any]) -> Dict[str, Any]:
 
 def save_chunks_cache() -> None:
     global chunks_embeddings, chunk_texts, chunk_sources, chunk_meta
+
+    if not chunk_texts or chunks_embeddings is None:
+        return
+
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
     with open(CACHE_PATH, "wb") as f:
         pickle.dump(
             {
@@ -89,78 +93,23 @@ def load_chunks_cache() -> bool:
 
 def load_json_file(path: str) -> None:
     global chunks_embeddings, chunk_texts, chunk_sources, chunk_meta
-    
-    cfg = get_config()
+
     embed_model = get_embed_model()
     page_count = 0
     new_texts: List[str] = []
     new_sources: List[Dict[str, Any]] = []
     new_meta: List[Dict[str, Any]] = []
-    
-    def add_chunk_with_context(text: str, title: str, url: str) -> None:
-        """Add a chunk with contextual header prepended."""
-        # Only add if at least 3 words and either contains sentence-ending punctuation or is long enough
+
+    def add_chunk(text: str, title: str, url: str) -> None:
         word_count = len(text.split())
         has_sentence_punct = any(p in text for p in ".!?")
         min_length = 30
         if word_count >= 3 and (has_sentence_punct or len(text) >= min_length):
-            # Prepend contextual header to improve retrieval
-            enable_headers = cfg.get("chunking", {}).get("enable_contextual_headers", True)
-            if enable_headers:
-                # Title simplification: remove redundant repetitions while keeping context
-                # e.g., "A - A - A" -> "A"
-                # e.g., "A - B - C" -> "A - B - C" (keep full path)
-                # e.g., "A - B - B" -> "A - B"
-                parts = [p.strip() for p in title.split(" - ")]
-                # Remove consecutive duplicates
-                simplified_parts = []
-                for part in parts:
-                    if not simplified_parts or simplified_parts[-1] != part:
-                        simplified_parts.append(part)
-                section_name = " - ".join(simplified_parts)
-                contextual_chunk = f"{section_name}\n\n{text}"
-            else:
-                contextual_chunk = text
-            new_texts.append(contextual_chunk)
+            new_texts.append(text)
             src = {"title": title, "url": url}
             new_sources.append(src)
             new_meta.append(_compute_meta_from_source(src))
-    
-    def add_chunk(text: str, title: str, url: str) -> None:
-        """Wrapper for backward compatibility."""
-        add_chunk_with_context(text, title, url)
-    
-    def create_overlapping_chunks(items: List[str], title: str, url: str, chunk_size: int = 3, overlap: int = 1) -> None:
-        """
-        Create overlapping chunks from a list of text items.
-        
-        Args:
-            items: List of text items (sentences, paragraphs, or list items)
-            title: Section title for context
-            url: Source URL
-            chunk_size: Number of items per chunk
-            overlap: Number of items to overlap between chunks
-        """
-        if not items:
-            return
-        
-        # If we have few items, just combine them
-        if len(items) <= chunk_size:
-            combined = " ".join(items)
-            add_chunk(combined, title, url)
-            return
-        
-        # Create overlapping chunks
-        for i in range(0, len(items), chunk_size - overlap):
-            chunk_items = items[i:i + chunk_size]
-            if chunk_items:
-                combined = " ".join(chunk_items)
-                add_chunk(combined, title, url)
-            
-            # Stop if we've reached the end
-            if i + chunk_size >= len(items):
-                break
-    
+
     def process_section(section: Dict[str, Any], parent_title: str = "", base_url: str = "") -> None:
         nonlocal page_count
         if not isinstance(section, dict):
@@ -175,55 +124,20 @@ def load_json_file(path: str) -> None:
 
         texts = section.get("text", [])
         if texts:
-            # Collect valid text items
-            valid_texts = []
             for text_item in texts:
                 if isinstance(text_item, str):
                     stripped = text_item.strip()
                     if stripped:
-                        valid_texts.append(stripped)
-            
-            # Create overlapping chunks from text items
-            if valid_texts:
-                enable_overlap = cfg.get("chunking", {}).get("enable_overlap", True)
-                if enable_overlap:
-                    text_chunk_size = cfg.get("chunking", {}).get("text_chunk_size", 3)
-                    text_overlap = cfg.get("chunking", {}).get("text_overlap", 1)
-                    create_overlapping_chunks(valid_texts, full_title, url, 
-                                            chunk_size=text_chunk_size, overlap=text_overlap)
-                else:
-                    # Original behavior: add each text item separately
-                    for text in valid_texts:
-                        add_chunk(text, full_title, url)
-        
-        # process lists (filter out short navigational items)
                         add_chunk(stripped, full_title, url)
 
         lists = section.get("lists", [])
         if lists:
             for list_group in lists:
                 if isinstance(list_group, list):
-                    valid_items = []
                     for item in list_group:
                         if isinstance(item, str):
                             stripped = item.strip()
                             if stripped:
-                                valid_items.append(stripped)
-                    
-                    # Create overlapping chunks from list items
-                    if valid_items:
-                        enable_overlap = cfg.get("chunking", {}).get("enable_overlap", True)
-                        if enable_overlap:
-                            list_chunk_size = cfg.get("chunking", {}).get("list_chunk_size", 5)
-                            list_overlap = cfg.get("chunking", {}).get("list_overlap", 2)
-                            create_overlapping_chunks(valid_items, full_title, url,
-                                                    chunk_size=list_chunk_size, overlap=list_overlap)
-                        else:
-                            # Original behavior: add each list item separately
-                            for item in valid_items:
-                                add_chunk(item, full_title, url)
-        
-        # process subsections recursively
                                 add_chunk(stripped, full_title, url)
 
         subsections = section.get("subsections", [])
@@ -286,45 +200,6 @@ def load_initial_data() -> None:
         filenames = ["unh_catalog.json"]
         for name in filenames:
             load_catalog(DATA_DIR / name)
-        
-        # Generate synthetic Q&A pairs from catalog chunks BEFORE saving cache
-        cfg = get_config()
-        if cfg.get("synthetic_qa", {}).get("enabled", True):
-            print("\n=== Generating Synthetic Q&A Pairs ===")
-            from services.synthetic_qa_service import get_qa_generator
-            qa_gen = get_qa_generator()
-            
-            # Create Q&A versions of existing chunks
-            original_chunks = list(zip(chunk_texts, chunk_meta))
-            augmented = qa_gen.augment_chunks_with_qa(
-                [(text, meta) for text, meta in zip(chunk_texts, chunk_meta)]
-            )
-            
-            # Extract the NEW synthetic chunks (skip originals)
-            synthetic_chunks = augmented[len(original_chunks):]
-            
-            if synthetic_chunks:
-                embed_model = get_embed_model()
-                new_texts = [text for text, _ in synthetic_chunks]
-                new_meta = [meta for _, meta in synthetic_chunks]
-                new_sources = [chunk_sources[i % len(chunk_sources)] for i in range(len(synthetic_chunks))]
-                
-                # Embed synthetic chunks
-                new_embeds = embed_model.encode(new_texts, convert_to_numpy=True)
-                
-                # Add to index
-                chunk_texts.extend(new_texts)
-                chunk_meta.extend(new_meta)
-                chunk_sources.extend(new_sources)
-                
-                if chunks_embeddings is None:
-                    chunks_embeddings = new_embeds
-                else:
-                    chunks_embeddings = np.vstack([chunks_embeddings, new_embeds])
-                
-                CHUNK_NORMS = np.linalg.norm(chunks_embeddings, axis=1)
-                print(f"Added {len(synthetic_chunks)} synthetic Q&A chunks to index")
-        
         save_chunks_cache()
 
     # initialize gold set manager
