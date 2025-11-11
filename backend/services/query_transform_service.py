@@ -61,7 +61,35 @@ def apply_domain_rules(text: str) -> str:
     out = text
     for key, val in DOMAIN_RULES.items():
         pattern = re.compile(rf"\b{re.escape(key)}\b", flags=re.IGNORECASE)
-        out = pattern.sub(val, out)
+        # Skip replacement if:
+        # 1. The expanded form is already present (e.g., "academic probation" already there)
+        # 2. The key word appears adjacent to words from the expansion (e.g., "GPA requirement" + rule "gpa"->"minimum GPA requirement")
+        val_lower = val.lower()
+        out_lower = out.lower()
+        
+        # Check if expansion already exists
+        if val_lower in out_lower:
+            continue
+            
+        # Check if key appears in a context that overlaps with the expansion
+        # e.g., "GPA requirement" shouldn't become "minimum GPA requirement requirement"
+        val_words = set(val_lower.split())
+        matches = pattern.finditer(out_lower)
+        skip = False
+        for match in matches:
+            start, end = match.span()
+            # Check words immediately before and after the match
+            context_start = max(0, start - 30)
+            context_end = min(len(out_lower), end + 30)
+            context = out_lower[context_start:context_end]
+            context_words = set(context.split())
+            # If other words from the expansion are already nearby, skip
+            if len(val_words.intersection(context_words) - {key.lower()}) > 0:
+                skip = True
+                break
+        
+        if not skip:
+            out = pattern.sub(val, out)
     return out
 
 def _extract_entities(text: str):
@@ -141,6 +169,7 @@ def llm_rewrite(query: str) -> str:
         "You rewrite user questions to be precise and UNH Graduate Catalog-specific.\n"
         "Rules:\n"
         "- Clarify vague nouns (e.g., 'failing' -> 'failing grade').\n"
+        "- Do NOT change the meaning of the question.\n"
         "- Do NOT invent facts, numbers, or policies.\n"
         "- Preserve all course codes and entities.\n"
         "- Keep it to a single concise question.\n\n"
@@ -150,13 +179,15 @@ def llm_rewrite(query: str) -> str:
         "User: thesis vs non thesis\n"
         "Rewritten: What is the difference between thesis and non-thesis options in UNH graduate programs?\n\n"
         "User: capstone?\n"
-        "Rewritten: What is the capstone requirement for UNH master’s programs?\n\n"
+        "Rewritten: What is the capstone requirement for UNH master's programs?\n\n"
         "User: audit option?\n"
         "Rewritten: Are UNH graduate students allowed to audit courses?\n\n"
         "User: comps required?\n"
         "Rewritten: Are comprehensive exams required for UNH graduate degrees?\n\n"
         "User: time limit masters\n"
-        "Rewritten: What is the time limit to complete a UNH master’s degree?\n\n"
+        "Rewritten: What is the time limit to complete a UNH master's degree?\n\n"
+        "User: How do I apply for graduation?\n"
+        "Rewritten: How do I apply for graduation from UNH?\n\n"
         f"User question: {query}\n"
         "Rewritten question:"
     )

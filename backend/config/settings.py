@@ -29,8 +29,7 @@ def load_retrieval_config() -> None:
 
     rs = CFG.get("retrieval_sizes", {})
     CFG["search"] = {
-        "topn_base": int(rs.get("topn_default", 40)),
-        "topn_with_alias": int(rs.get("topn_with_alias", 80)),
+        "topn_default": int(rs.get("topn_default", 40))
     }
     CFG["k"] = int(rs.get("k", 5))
 
@@ -55,4 +54,4 @@ def get_policy_terms() -> Tuple[str, ...]:
 # Default stays MiniLM; can override via env var.
 EMBED_MODEL_NAME = os.getenv("EMBED_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2")
 # --- Query Transformation ---
-ENABLE_QUERY_REWRITER = True  # set False to disable LLM rewrite; rules still apply
+ENABLE_QUERY_REWRITER = True  # DISABLED: flan-t5-small too weak for reliable rewrites (confuses "graduation" with "graduate admission")

@@ -68,7 +68,52 @@ def add_paragraph(tag, stack, page_url):
         item["links"] = links
     current["content"].append(item)
 
+def is_navigational_list(tag):
+    """
+    Identify if a list is likely navigational (should be skipped).
+    Returns True if the list appears to be navigation, False otherwise.
+    """
+    # Check the list's own classes
+    classes = tag.get("class", [])
+    nav_classes = {"nav", "navigation", "menu", "sidebar", "breadcrumb", "breadcrumbs", 
+                   "tabs", "links", "sitemap", "toc", "table-of-contents"}
+    if any(nc in " ".join(classes).lower() for nc in nav_classes):
+        return True
+    # Check parent and ancestor classes
+    for parent in tag.parents:
+        if not parent.name:
+            continue
+        # Skip if inside <nav> element
+        if parent.name == "nav":
+            return True
+        parent_classes = parent.get("class", [])
+        parent_class_str = " ".join(parent_classes).lower()
+        if any(nc in parent_class_str for nc in nav_classes):
+            return True
+        # Stop checking ancestors after main/article/content divs
+        if parent.name in ("main", "article") or parent.get("id") in ("content", "main-content"):
+            break
+    # Check link density: if >80% of list items are just links, likely navigation
+    list_items = tag.find_all("li", recursive=False)
+    if list_items:
+        link_only_count = 0
+        for li in list_items:
+            # Check if li contains only a link (and minimal text outside the link)
+            links = li.find_all("a", recursive=False)
+            if links:
+                link_text = " ".join(a.get_text(strip=True) for a in links)
+                total_text = li.get_text(strip=True)
+                # If link text is >90% of total text, it's link-only
+                if total_text and len(link_text) / len(total_text) > 0.9:
+                    link_only_count += 1
+        if len(list_items) > 0 and link_only_count / len(list_items) > 0.8:
+            return True
+    return False
+
 def add_list(tag, stack, page_url):
+    # Skip navigational lists
+    if is_navigational_list(tag):
+        return
     _, current = stack[-1]
     items = [clean_text(li) for li in tag.find_all("li", recursive=False) if clean_text(li)]
     if not items:

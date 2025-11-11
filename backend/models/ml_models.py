@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Any
+from config.settings import get_config
 import os
 
 try:
@@ -18,11 +19,15 @@ _loaded_embed_model_name: str = None
 def initialize_models(fine_tuned : bool = True) -> None:
     global embed_model, qa_pipeline
     
+    # Check config for fine-tuned model setting
+    cfg = get_config()
+    fine_tuned = cfg.get("performance", {}).get("use_finetuned_model", fine_tuned)
     # choose embedding model name from settings or ENV fallback
     model_name = _CFG_EMBED_NAME or os.getenv("EMBED_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2")
-    embed_model = SentenceTransformer(model_name)
+    
+    embed_model = SentenceTransformer(model_name, device='cpu')
     globals()["_loaded_embed_model_name"] = model_name
-    print(f"Embedding model loaded: {model_name}")
+    print(f"Embedding model loaded: {model_name} (CPU)")
     
     # load trained model if available, otherwise use default
     trained_path = Path(__file__).parent.parent / "train" / "models" / "flan-t5-small-finetuned"
@@ -50,9 +55,9 @@ def get_embed_model() -> SentenceTransformer:
     if embed_model is None:
         # lazy init fallback (keeps behavior robust in tests/scripts)
         model_name = _CFG_EMBED_NAME or os.getenv("EMBED_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2")
-        embed_model = SentenceTransformer(model_name)
+        embed_model = SentenceTransformer(model_name, device='cpu')
         _loaded_embed_model_name = model_name
-        print(f"[lazy-init] Embedding model loaded: {model_name}")
+        print(f"[lazy-init] Embedding model loaded: {model_name} (CPU)")
     return embed_model
 
 def get_qa_pipeline() -> Any:
@@ -84,7 +89,6 @@ def call_model(prompt: str) -> str:
             prompt,
             max_new_tokens=64,
             do_sample=False,
-            temperature=0.0,
             num_return_sequences=1,
             clean_up_tokenization_spaces=True
         )
