@@ -18,6 +18,11 @@ def _tier_boost(tier: int, query: str = "") -> float:
         else:
             return float(cfg.get("gold_set", {}).get("tier_boost", 3.0))
     
+     # Check if tier system is enabled AFTER boosting gold chunks
+    tier_system_enabled = cfg.get("tier_system", {}).get("enabled", True)
+    if not tier_system_enabled:
+        return 1.0  # No tier boosting when disabled
+    
     base_boost = float(cfg.get("tier_boosts", {}).get(tier, 1.0))
     
     # Extra boost for Tier 1 (academic regs) if query contains policy terms
@@ -28,6 +33,7 @@ def _tier_boost(tier: int, query: str = "") -> float:
             base_boost *= 1.3  # 30% additional boost for policy questions
     
     return base_boost
+
 def _is_acad_reg_url(url: str) -> bool:
     return isinstance(url, str) and "/graduate/academic-regulations-degree-requirements/" in url
 

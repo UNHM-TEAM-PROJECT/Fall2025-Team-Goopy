@@ -23,6 +23,10 @@ policy_terms:
   - probation
   - dismissal
 
+# Tier system configuration
+tier_system:
+  enabled: false  # Set to false to disable tier boosting (all chunks treated equally)
+
 tier_boosts:
   0: 3.0
   1: 1.5
@@ -92,6 +96,10 @@ followups:
     - "that"
     - "this"
     - "same"
+
+# Calendar linking configuration
+calendar_linking:
+  enabled: false  # Set to false to disable automatic calendar fallback links
 
 # beam search configuration for answer generation
 beam_search:
