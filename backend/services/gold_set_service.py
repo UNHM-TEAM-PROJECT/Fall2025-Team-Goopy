@@ -10,7 +10,6 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from data.gold_db import GoldSetDB
 
-
 class GoldSetManager:
     def __init__(self, db_path: str = None):
         # load configuration
@@ -390,17 +389,14 @@ class GoldSetManager:
     def __del__(self):
         self.close()
 
-
 # global instance
 _gold_manager: Optional[GoldSetManager] = None
-
 
 def get_gold_manager() -> GoldSetManager:
     global _gold_manager
     if _gold_manager is None:
         _gold_manager = GoldSetManager()
     return _gold_manager
-
 
 def initialize_gold_set(embed_model: SentenceTransformer):
     manager = get_gold_manager()

@@ -102,11 +102,13 @@ gold_set:
   enabled: true
   gold_file_path: "../automation_testing/gold.jsonl"
 
-  # Direct answer logic
+  # direct answer feature
   enable_direct_answer: true
   direct_answer_threshold: 0.85
 
-  # Boosting settings
+  enable_dual_answers: true
+
+  # boost settings
   tier_boost: 3.0
   gold_chunk_boost: 2.5
   gold_url_boost: 1.5
